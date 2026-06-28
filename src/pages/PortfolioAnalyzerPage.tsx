@@ -11,24 +11,16 @@ interface Props {
   config: ThrottleConfig;
   positionSize: number;
   portfolioResult: PortfolioResult;
+  inWindowCount: number;
   allSectors: string[];
   scenarioHistory: ScenarioHistoryItem[];
   onConfigChange: (c: ThrottleConfig) => void;
   onPositionSizeChange: (v: number) => void;
 }
 
-function buildVerdict(p: PortfolioResult, config: ThrottleConfig): React.ReactNode {
+function buildVerdict(p: PortfolioResult, config: ThrottleConfig, inWindowCount: number): React.ReactNode {
   if (p.acceptedCount === 0) {
     return <span>No signals were accepted with these settings. Adjust the window, cap, or sector filter.</span>;
-  }
-
-  if (p.capitalWarning === 'red') {
-    return (
-      <span>
-        <span className="v-warn">Capital deployed exceeds 100%.</span>{' '}
-        Lower the cap or position size before trusting this scenario.
-      </span>
-    );
   }
 
   const netStr = (
@@ -37,24 +29,23 @@ function buildVerdict(p: PortfolioResult, config: ThrottleConfig): React.ReactNo
     </span>
   );
 
-  const costNote = p.costConsumedPct !== null ? (
-    <>Transaction costs consumed <span className="v-num">{formatPercent(p.costConsumedPct)}</span> of gross return.</>
-  ) : (
-    <>Costs were deducted from every accepted signal.</>
-  );
+  const capWarning = p.capitalWarning === 'red' ? (
+    <> <span className="v-warn">Capital exceeds 100% — lower the cap or position size.</span></>
+  ) : null;
 
   return (
     <span>
-      With cap=<span className="v-num">{config.signalCap}</span> and position size=
-      <span className="v-num">{formatPercent(p.positionSize)}</span>, you deployed{' '}
-      <span className="v-num">{formatPercent(p.capitalDeployed)}</span> of capital.
-      {' '}Net portfolio return: {netStr}. {costNote}
+      <span className="v-num">{inWindowCount}</span> signals arrived in window.{' '}
+      You accepted <span className="v-num">{p.acceptedCount}</span>{' '}
+      (cap=<span className="v-num">{config.signalCap}</span>).{' '}
+      Net portfolio return: {netStr}.{' '}
+      Capital deployed: <span className="v-num">{formatPercent(p.capitalDeployed)}</span>.{capWarning}
     </span>
   );
 }
 
 export function PortfolioAnalyzerPage({
-  config, positionSize, portfolioResult, allSectors, scenarioHistory,
+  config, positionSize, portfolioResult, inWindowCount, allSectors, scenarioHistory,
   onConfigChange, onPositionSizeChange,
 }: Props) {
   const p = portfolioResult;
@@ -63,7 +54,7 @@ export function PortfolioAnalyzerPage({
     <div className="page-scroll">
       <VerdictBanner
         question="What did the accepted signals do to the portfolio?"
-        answer={buildVerdict(p, config)}
+        answer={buildVerdict(p, config, inWindowCount)}
       />
 
       <div className="portfolio-layout">

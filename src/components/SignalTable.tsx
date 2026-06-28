@@ -39,10 +39,10 @@ export function SignalTable({ title, subtitle, signals, collapsible, defaultColl
               <tr>
                 <th>Rank</th>
                 <th>OSID</th>
-                <th>Arrival time</th>
+                <th>Time</th>
                 <th>Sector</th>
                 <th>Gross return</th>
-                <th>Trading cost</th>
+                <th>TC</th>
                 <th>Net return</th>
               </tr>
             </thead>

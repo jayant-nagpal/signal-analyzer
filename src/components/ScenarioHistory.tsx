@@ -12,26 +12,24 @@ export function ScenarioHistory({ history }: Props) {
     <div className="scenario-history">
       <div className="table-header">
         <div className="table-title">Scenario comparison</div>
-        <div className="table-subtitle" style={{ marginTop: 2 }}>Last {history.length} setting{history.length !== 1 ? 's' : ''}</div>
+        <div className="table-subtitle" style={{ marginTop: 2 }}>
+          Last {history.length} cap{history.length !== 1 ? 's' : ''} tried
+        </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table className="data-table">
           <thead>
             <tr>
               <th>Cap</th>
-              <th>Position</th>
-              <th>Window</th>
-              <th>Accepted</th>
+              <th>Signals accepted</th>
               <th>Net return</th>
-              <th>Capital</th>
+              <th>Capital deployed</th>
             </tr>
           </thead>
           <tbody>
             {history.map((item, i) => (
-              <tr key={i} className={i === 0 ? 'row-pos' : ''}>
+              <tr key={i}>
                 <td className="td-num">{item.cap}</td>
-                <td className="td-num">{formatPercent(item.positionSize)}</td>
-                <td className="td-num">{item.startTime}–{item.endTime}</td>
                 <td className="td-num">{item.acceptedCount}</td>
                 <td className={`td-num ${item.netReturn >= 0 ? 'td-pos' : 'td-neg'}`}>
                   {formatSignedPercent(item.netReturn)}

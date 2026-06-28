@@ -327,15 +327,19 @@ export default function App() {
           activeTab === 'throttle' ? (
             <SignalThrottlePage
               throttleResult={throttleResult}
+              portfolioResult={portfolioResult!}
               counterfactual={counterfactualResult}
               windowStart={effectiveConfig.startTime}
               windowEnd={effectiveConfig.endTime}
+              signalCap={effectiveConfig.signalCap}
+              positionSize={positionSize}
             />
           ) : (
             <PortfolioAnalyzerPage
               config={effectiveConfig}
               positionSize={positionSize}
               portfolioResult={portfolioResult!}
+              inWindowCount={throttleResult.summary.inWindowCount}
               allSectors={allSectors}
               scenarioHistory={scenarioHistory}
               onConfigChange={handleConfigChange}

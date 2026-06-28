@@ -1,39 +1,68 @@
-import type { ThrottleResult, CounterfactualResult } from '../lib/types';
+import type { ThrottleResult, CounterfactualResult, PortfolioResult } from '../lib/types';
 import { VerdictBanner } from '../components/VerdictBanner';
 import { KpiCard } from '../components/KpiCard';
 import { SignalTimeline } from '../components/SignalTimeline';
 import { SignalTable } from '../components/SignalTable';
-import { formatSignedPercent } from '../lib/format';
+import { formatSignedPercent, formatPercent } from '../lib/format';
 
 interface Props {
   throttleResult: ThrottleResult;
+  portfolioResult: PortfolioResult;
   counterfactual: CounterfactualResult | null;
   windowStart: string;
   windowEnd: string;
+  signalCap: number;
+  positionSize: number;
 }
 
-function buildVerdict(result: ThrottleResult): React.ReactNode {
-  const { acceptedCount, inWindowCount, skippedCount, outsideWindowCount } = result.summary;
+function buildVerdict(
+  result: ThrottleResult,
+  portfolio: PortfolioResult,
+  cap: number,
+): React.ReactNode {
+  const { acceptedCount, inWindowCount } = result.summary;
 
   if (inWindowCount === 0) {
-    return <span>No signals arrived inside this window. Widen the time window or check the event_date mapping.</span>;
+    return (
+      <span>
+        No signals arrived inside this window. Widen the time window or check the event_date mapping.
+      </span>
+    );
   }
 
   if (acceptedCount === 0) {
-    return <span>No signals were accepted. Adjust the time window, sector filter, or cap.</span>;
+    return (
+      <span>
+        <span className="v-num">{inWindowCount}</span> signals arrived in window. None accepted — adjust cap or sector filter.
+      </span>
+    );
   }
+
+  const netStr = (
+    <span className={portfolio.netReturn >= 0 ? 'v-pos' : 'v-neg'}>
+      {formatSignedPercent(portfolio.netReturn)}
+    </span>
+  );
 
   return (
     <span>
-      <span className="v-num">{inWindowCount}</span> signals arrived inside the window.
-      You accepted <span className="v-num">{acceptedCount}</span> first come first serve.{' '}
-      {skippedCount > 0 && <><span className="v-num">{skippedCount}</span> {skippedCount === 1 ? 'was' : 'were'} skipped. </>}
-      {outsideWindowCount > 0 && <><span className="v-num">{outsideWindowCount}</span> {outsideWindowCount === 1 ? 'was' : 'were'} outside the window.</>}
+      <span className="v-num">{inWindowCount}</span> signals arrived in window.{' '}
+      You accepted <span className="v-num">{acceptedCount}</span>{' '}
+      (cap=<span className="v-num">{cap}</span>).{' '}
+      Net portfolio return: {netStr}.{' '}
+      Capital deployed: <span className="v-num">{formatPercent(portfolio.capitalDeployed)}</span>.
     </span>
   );
 }
 
-export function SignalThrottlePage({ throttleResult, counterfactual, windowStart, windowEnd }: Props) {
+export function SignalThrottlePage({
+  throttleResult,
+  portfolioResult,
+  counterfactual,
+  windowStart,
+  windowEnd,
+  signalCap,
+}: Props) {
   const { summary, acceptedSignals, skippedSignals, outsideWindowSignals, filteredOutSignals } = throttleResult;
 
   const allTimelineSignals = [
@@ -62,7 +91,7 @@ export function SignalThrottlePage({ throttleResult, counterfactual, windowStart
     <div className="page-scroll">
       <VerdictBanner
         question="Which signals would we actually trade under the cap?"
-        answer={buildVerdict(throttleResult)}
+        answer={buildVerdict(throttleResult, portfolioResult, signalCap)}
       />
 
       {/* KPI Summary */}
@@ -103,18 +132,18 @@ export function SignalThrottlePage({ throttleResult, counterfactual, windowStart
         footer={counterfactualFooter}
       />
 
-      {/* Outside window */}
+      {/* Outside window — collapsed by default */}
       {outsideWindowSignals.length > 0 && (
         <SignalTable
           title="Outside window"
-          subtitle="Signals before or after the selected time window."
+          subtitle="Signals before or after the selected time window. Ignored by throttle."
           signals={outsideWindowSignals}
           collapsible
           defaultCollapsed
         />
       )}
 
-      {/* Filtered out */}
+      {/* Filtered out — collapsed by default */}
       {filteredOutSignals.length > 0 && (
         <SignalTable
           title="Filtered by sector"
