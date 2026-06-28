@@ -76,41 +76,23 @@ export function runThrottle(signals: SignalRow[], config: ThrottleConfig): Throt
     });
   }
 
-  // 3. Apply cap — first come first serve, group same timestamps
+  // 3. Apply cap — strict first come first serve, one signal at a time.
+  // Within the same minute, CSV row order is the tiebreaker (data is already
+  // in arrival order; sub-minute precision is not available in the source).
   const accepted: SignalDecision[] = [];
   const skipped: SignalDecision[] = [];
+
+  // Sort by timestamp, preserving original row order for same-minute ties.
+  const sorted = [...inWindow].sort((a, b) => a.eventDate.getTime() - b.eventDate.getTime());
+
   let rank = 0;
-
-  // Group inWindow by timestamp
-  const groups: Map<number, SignalDecision[]> = new Map();
-  for (const sig of inWindow) {
-    const ts = sig.eventDate.getTime();
-    if (!groups.has(ts)) groups.set(ts, []);
-    groups.get(ts)!.push(sig);
-  }
-
-  const sortedTimestamps = [...groups.keys()].sort((a, b) => a - b);
-
-  for (const ts of sortedTimestamps) {
-    const group = groups.get(ts)!;
-    if (rank >= config.signalCap) {
-      // Cap already full — skip entire group
-      for (const sig of group) {
-        skipped.push({ ...sig, arrivalRank: rank + 1, status: 'skipped', reason: 'Cap already full.' });
-      }
+  for (const sig of sorted) {
+    rank++;
+    if (rank <= config.signalCap) {
+      accepted.push({ ...sig, arrivalRank: rank, status: 'accepted', reason: 'Accepted.' });
     } else {
-      // Accept entire group (tie rule)
-      for (const sig of group) {
-        rank++;
-        accepted.push({ ...sig, arrivalRank: rank, status: 'accepted', reason: 'Accepted.' });
-      }
+      skipped.push({ ...sig, arrivalRank: rank, status: 'skipped', reason: 'Cap already full.' });
     }
-  }
-
-  // Re-rank skipped in arrival order
-  let skipRank = rank + 1;
-  for (const sig of skipped) {
-    sig.arrivalRank = skipRank++;
   }
 
   const summary = {
