@@ -8,7 +8,7 @@ import { normalizeRows } from './lib/normalize';
 import { runThrottle } from './lib/throttle';
 import { computePortfolio, computeCounterfactual, computeBestCap } from './lib/portfolio';
 import { parseFile } from './lib/parse/parseFile';
-import { DEFAULT_CAP, DEFAULT_POSITION_SIZE, DEFAULT_START_TIME, DEFAULT_END_TIME } from './lib/constants';
+import { DEFAULT_CAP, DEFAULT_POSITION_SIZE, DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_HOLDING_PERIOD_MINS } from './lib/constants';
 import { SAMPLE_RAW_ROWS } from './data/sampleSignals';
 
 import { Sidebar } from './components/Sidebar';
@@ -72,6 +72,7 @@ export default function App() {
     startTime: DEFAULT_START_TIME,
     endTime: DEFAULT_END_TIME,
     signalCap: DEFAULT_CAP,
+    holdingPeriodMins: DEFAULT_HOLDING_PERIOD_MINS,
     selectedSectors: new Set<string>(),
   });
   const [positionSize, setPositionSize] = useState(DEFAULT_POSITION_SIZE);
@@ -245,6 +246,7 @@ export default function App() {
       startTime: '12:15',
       endTime: '13:15',
       signalCap: DEFAULT_CAP,
+      holdingPeriodMins: DEFAULT_HOLDING_PERIOD_MINS,
       selectedSectors: new Set<string>(),
     });
     setPositionSize(DEFAULT_POSITION_SIZE);
@@ -265,7 +267,7 @@ export default function App() {
     setSelectedEventId(id);
     const evtSignals = signals.filter(s => s.eventId === id);
     const window = detectDefaultWindow(evtSignals);
-    setConfig(c => ({ ...c, startTime: window.startTime, endTime: window.endTime, selectedSectors: new Set<string>() }));
+    setConfig(c => ({ ...c, startTime: window.startTime, endTime: window.endTime, holdingPeriodMins: DEFAULT_HOLDING_PERIOD_MINS, selectedSectors: new Set<string>() }));
   }, [signals]);
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -338,6 +340,7 @@ export default function App() {
               portfolioResult={portfolioResult!}
               counterfactual={counterfactualResult}
               bestCap={bestCapResult}
+              config={effectiveConfig}
               windowStart={effectiveConfig.startTime}
               windowEnd={effectiveConfig.endTime}
               signalCap={effectiveConfig.signalCap}

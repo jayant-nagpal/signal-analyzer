@@ -33,3 +33,4 @@ export const DEFAULT_CAP = 5;
 export const DEFAULT_POSITION_SIZE = 0.02;
 export const DEFAULT_START_TIME = '12:15';
 export const DEFAULT_END_TIME = '13:15';
+export const DEFAULT_HOLDING_PERIOD_MINS = 0; // 0 = disabled (classic mode)

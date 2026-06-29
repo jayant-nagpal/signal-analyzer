@@ -22,11 +22,12 @@ export interface SignalRow {
 
 export interface SignalDecision extends SignalRow {
   arrivalRank: number | null;
-  status: 'accepted' | 'skipped' | 'outside_window' | 'filtered_out';
+  status: 'accepted' | 'skipped' | 'outside_window' | 'filtered_out' | 'ignored_hold';
   reason: string;
   grossReturn: number;
   transactionCost: number;
   netReturn: number;
+  batchIndex: number | null; // which holding-period batch accepted this signal (null if not accepted)
 }
 
 // ─── Throttle ─────────────────────────────────────────────────────────────────
@@ -35,6 +36,7 @@ export interface ThrottleConfig {
   startTime: string; // "HH:mm"
   endTime: string;   // "HH:mm"
   signalCap: number;
+  holdingPeriodMins: number; // 0 = no holding period (classic mode)
   selectedSectors: Set<string>;
 }
 
@@ -45,6 +47,8 @@ export interface ThrottleSummary {
   skippedCount: number;
   outsideWindowCount: number;
   filteredOutCount: number;
+  ignoredHoldCount: number;
+  batchCount: number; // how many holding-period batches fired
 }
 
 export interface ThrottleResult {
@@ -54,6 +58,7 @@ export interface ThrottleResult {
   skippedSignals: SignalDecision[];
   outsideWindowSignals: SignalDecision[];
   filteredOutSignals: SignalDecision[];
+  ignoredHoldSignals: SignalDecision[];
   summary: ThrottleSummary;
 }
 

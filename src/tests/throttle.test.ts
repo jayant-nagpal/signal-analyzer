@@ -22,6 +22,7 @@ describe('Throttle logic', () => {
       startTime: '12:15',
       endTime: '13:15',
       signalCap: 5,
+      holdingPeriodMins: 0,
       selectedSectors: new Set(['Energy','Materials','Industrials','Consumer Discretionary','Consumer Staples','Healthcare','Financials','Information Technology','Communication Services','Utilities','Real Estate']),
     });
     expect(result.summary.acceptedCount).toBe(5);
@@ -39,6 +40,7 @@ describe('Throttle logic', () => {
       startTime: '12:15',
       endTime: '13:15',
       signalCap: 50,
+      holdingPeriodMins: 0,
       selectedSectors: new Set(['Energy','Materials','Industrials','Consumer Discretionary','Consumer Staples','Healthcare','Financials','Information Technology','Communication Services','Utilities','Real Estate']),
     });
     expect(result.outsideWindowSignals.length).toBeGreaterThan(0);
@@ -55,6 +57,7 @@ describe('Throttle logic', () => {
       startTime: '12:15',
       endTime: '13:15',
       signalCap: 50,
+      holdingPeriodMins: 0,
       selectedSectors: allSectors,
     });
     for (const s of result.filteredOutSignals) {
@@ -71,6 +74,7 @@ describe('Throttle logic', () => {
       startTime: '12:15',
       endTime: '13:15',
       signalCap: 5,
+      holdingPeriodMins: 0,
       selectedSectors: new Set(['Energy','Materials','Industrials','Consumer Discretionary','Consumer Staples','Healthcare','Financials','Information Technology','Communication Services','Utilities','Real Estate']),
     });
     // 12:15 group has 2 signals (44347 + 45356) — both should be accepted
@@ -88,6 +92,7 @@ describe('Throttle logic', () => {
       startTime: '12:15',
       endTime: '13:15',
       signalCap: 2,
+      holdingPeriodMins: 0,
       selectedSectors: new Set(['Energy','Materials','Industrials','Consumer Discretionary','Consumer Staples','Healthcare','Financials','Information Technology','Communication Services','Utilities','Real Estate']),
     });
     expect(result.summary.acceptedCount).toBe(2);
