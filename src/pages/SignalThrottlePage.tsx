@@ -1,56 +1,43 @@
-import type { ThrottleResult, CounterfactualResult, PortfolioResult } from '../lib/types';
+import type { ThrottleResult, CounterfactualResult, PortfolioResult, BestCapResult } from '../lib/types';
 import { VerdictBanner } from '../components/VerdictBanner';
 import { KpiCard } from '../components/KpiCard';
 import { SignalTimeline } from '../components/SignalTimeline';
 import { SignalTable } from '../components/SignalTable';
-import { formatSignedPercent, formatPercent } from '../lib/format';
+import { formatSignedPercent } from '../lib/format';
 
 interface Props {
   throttleResult: ThrottleResult;
   portfolioResult: PortfolioResult;
   counterfactual: CounterfactualResult | null;
+  bestCap: BestCapResult | null;
   windowStart: string;
   windowEnd: string;
   signalCap: number;
   positionSize: number;
 }
 
-function buildVerdict(
-  result: ThrottleResult,
-  portfolio: PortfolioResult,
-  cap: number,
-): React.ReactNode {
-  const { acceptedCount, inWindowCount } = result.summary;
+function buildVerdict(result: ThrottleResult, portfolio: PortfolioResult): React.ReactNode {
+  const { acceptedCount, skippedCount, inWindowCount, outsideWindowCount } = result.summary;
 
   if (inWindowCount === 0) {
     return (
-      <span>
-        No signals arrived inside this window. Widen the time window or check the event_date mapping.
-      </span>
+      <span>No signals arrived inside this window. Widen the time window or check the event_date mapping.</span>
     );
   }
 
-  if (acceptedCount === 0) {
-    return (
-      <span>
-        <span className="v-num">{inWindowCount}</span> signals arrived in window. None accepted — adjust cap or sector filter.
-      </span>
-    );
-  }
-
-  const netStr = (
-    <span className={portfolio.netReturn >= 0 ? 'v-pos' : 'v-neg'}>
-      {formatSignedPercent(portfolio.netReturn)}
-    </span>
-  );
+  const capWarn = portfolio.capitalWarning === 'red' ? (
+    <span className="v-warn"> Capital exceeds 100% — reduce cap or position size.</span>
+  ) : portfolio.capitalWarning === 'amber' ? (
+    <span className="v-warn-amber"> 80%+ of portfolio deployed.</span>
+  ) : null;
 
   return (
     <span>
-      <span className="v-num">{inWindowCount}</span> signals arrived in window.{' '}
-      You accepted <span className="v-num">{acceptedCount}</span>{' '}
-      (cap=<span className="v-num">{cap}</span>).{' '}
-      Net portfolio return: {netStr}.{' '}
-      Capital deployed: <span className="v-num">{formatPercent(portfolio.capitalDeployed)}</span>.
+      <span className="v-num">{inWindowCount}</span> signals in window.{' '}
+      Accepted <span className="v-num v-pos">{acceptedCount}</span>.{' '}
+      Skipped <span className="v-num v-neg">{skippedCount}</span>.{' '}
+      <span className="v-num">{outsideWindowCount}</span> outside window (ignored).
+      {capWarn}
     </span>
   );
 }
@@ -59,6 +46,7 @@ export function SignalThrottlePage({
   throttleResult,
   portfolioResult,
   counterfactual,
+  bestCap,
   windowStart,
   windowEnd,
   signalCap,
@@ -71,15 +59,48 @@ export function SignalThrottlePage({
     ...outsideWindowSignals,
   ];
 
-  const counterfactualFooter = counterfactual && counterfactual.n > 0 ? (
+  // Counterfactual: "if you had taken skipped signals instead"
+  const skippedCounterfactual = counterfactual && counterfactual.n > 0 ? (
     <div className="counterfactual-box">
       <div className="counterfactual-main">
-        If you had taken the next{' '}
-        <strong>{counterfactual.n}</strong> skipped signal{counterfactual.n !== 1 ? 's' : ''} instead,
-        portfolio return would have been{' '}
-        <span className={counterfactual.netReturn >= 0 ? 'td-pos' : 'td-neg'} style={{ fontFamily: 'var(--font-mono)' }}>
+        If you had taken the next <strong>{counterfactual.n}</strong> skipped signal{counterfactual.n !== 1 ? 's' : ''} instead,
+        net return would have been{' '}
+        <span
+          className={counterfactual.netReturn >= 0 ? 'td-pos' : 'td-neg'}
+          style={{ fontFamily: 'var(--font-mono)' }}
+        >
           {formatSignedPercent(counterfactual.netReturn)}
         </span>.
+      </div>
+      {bestCap && bestCap.cap !== signalCap && (
+        <div className="counterfactual-main" style={{ marginTop: 6 }}>
+          Best cap across all options:{' '}
+          <strong>cap={bestCap.cap}</strong> →{' '}
+          <span
+            className={bestCap.netReturn >= 0 ? 'td-pos' : 'td-neg'}
+            style={{ fontFamily: 'var(--font-mono)' }}
+          >
+            {formatSignedPercent(bestCap.netReturn)}
+          </span>
+          {' '}net ({bestCap.acceptedCount} signals accepted).
+        </div>
+      )}
+      <div className="counterfactual-note">
+        Counterfactual only. The throttle does not know future returns.
+      </div>
+    </div>
+  ) : bestCap && bestCap.cap !== signalCap ? (
+    <div className="counterfactual-box">
+      <div className="counterfactual-main">
+        Best cap across all options:{' '}
+        <strong>cap={bestCap.cap}</strong> →{' '}
+        <span
+          className={bestCap.netReturn >= 0 ? 'td-pos' : 'td-neg'}
+          style={{ fontFamily: 'var(--font-mono)' }}
+        >
+          {formatSignedPercent(bestCap.netReturn)}
+        </span>
+        {' '}net ({bestCap.acceptedCount} signals accepted).
       </div>
       <div className="counterfactual-note">
         Counterfactual only. The throttle does not know future returns.
@@ -91,7 +112,7 @@ export function SignalThrottlePage({
     <div className="page-scroll">
       <VerdictBanner
         question="Which signals would we actually trade under the cap?"
-        answer={buildVerdict(throttleResult, portfolioResult, signalCap)}
+        answer={buildVerdict(throttleResult, portfolioResult)}
       />
 
       {/* KPI Summary */}
@@ -129,7 +150,7 @@ export function SignalThrottlePage({
         signals={skippedSignals}
         collapsible
         defaultCollapsed={false}
-        footer={counterfactualFooter}
+        footer={skippedCounterfactual}
       />
 
       {/* Outside window — collapsed by default */}

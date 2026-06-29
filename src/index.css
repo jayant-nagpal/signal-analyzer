@@ -311,7 +311,8 @@ input, select { font-family: var(--font-ui); }
 .verdict-answer .v-pos { color: var(--green); font-family: var(--font-mono); }
 .verdict-answer .v-neg { color: var(--red); font-family: var(--font-mono); }
 .verdict-answer .v-num { font-family: var(--font-mono); color: var(--text-primary); }
-.verdict-answer .v-warn { color: var(--amber); }
+.verdict-answer .v-warn { color: var(--red); font-weight: 500; }
+.verdict-answer .v-warn-amber { color: var(--amber); font-weight: 500; }
 
 /* ─── KPI Cards ─────────────────────────────────────────────────────────────── */
 .kpi-grid {

@@ -18,34 +18,45 @@ interface Props {
   onPositionSizeChange: (v: number) => void;
 }
 
-function buildVerdict(p: PortfolioResult, config: ThrottleConfig, inWindowCount: number): React.ReactNode {
+function buildVerdict(p: PortfolioResult, config: ThrottleConfig): React.ReactNode {
   if (p.acceptedCount === 0) {
     return <span>No signals were accepted with these settings. Adjust the window, cap, or sector filter.</span>;
   }
 
-  const netStr = (
-    <span className={p.netReturn >= 0 ? 'v-pos' : 'v-neg'}>
-      {formatSignedPercent(p.netReturn)}
-    </span>
-  );
+  // TC as % of gross (show only when gross != 0)
+  const tcPct = p.grossReturn !== 0
+    ? Math.abs(p.transactionCosts / p.grossReturn * 100).toFixed(0)
+    : null;
 
-  const capWarning = p.capitalWarning === 'red' ? (
-    <> <span className="v-warn">Capital exceeds 100% — lower the cap or position size.</span></>
+  // Win rate as fraction e.g. "1/5"
+  const winners = p.contributions.filter(c => c.netContribution > 0).length;
+  const winFraction = `${winners}/${p.acceptedCount}`;
+
+  const capWarn = p.capitalWarning === 'red' ? (
+    <span className="v-warn"> Capital exceeds 100% — reduce cap or position size.</span>
+  ) : p.capitalWarning === 'amber' ? (
+    <span className="v-warn-amber"> 80%+ of portfolio deployed.</span>
   ) : null;
 
   return (
     <span>
-      <span className="v-num">{inWindowCount}</span> signals arrived in window.{' '}
-      You accepted <span className="v-num">{p.acceptedCount}</span>{' '}
-      (cap=<span className="v-num">{config.signalCap}</span>).{' '}
-      Net portfolio return: {netStr}.{' '}
-      Capital deployed: <span className="v-num">{formatPercent(p.capitalDeployed)}</span>.{capWarning}
+      Net return{' '}
+      <span className={p.netReturn >= 0 ? 'v-pos' : 'v-neg'}>
+        {formatSignedPercent(p.netReturn)}
+      </span>.
+      {tcPct !== null && (
+        <> TC ate <span className="v-num">{tcPct}%</span> of gross.</>  
+      )}
+      {' '}Win rate <span className="v-num">{winFraction}</span>.
+      {' '}Capital deployed <span className="v-num">{formatPercent(p.capitalDeployed)}</span>
+      {' '}(cap=<span className="v-num">{config.signalCap}</span> × <span className="v-num">{formatPercent(p.positionSize)}</span>).
+      {capWarn}
     </span>
   );
 }
 
 export function PortfolioAnalyzerPage({
-  config, positionSize, portfolioResult, inWindowCount, allSectors, scenarioHistory,
+  config, positionSize, portfolioResult, inWindowCount: _inWindowCount, allSectors, scenarioHistory,
   onConfigChange, onPositionSizeChange,
 }: Props) {
   const p = portfolioResult;
@@ -54,7 +65,7 @@ export function PortfolioAnalyzerPage({
     <div className="page-scroll">
       <VerdictBanner
         question="What did the accepted signals do to the portfolio?"
-        answer={buildVerdict(p, config, inWindowCount)}
+        answer={buildVerdict(p, config)}
       />
 
       <div className="portfolio-layout">

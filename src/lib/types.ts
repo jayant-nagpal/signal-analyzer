@@ -87,6 +87,12 @@ export interface CounterfactualResult {
   signals: SignalDecision[];
 }
 
+export interface BestCapResult {
+  cap: number;
+  netReturn: number;
+  acceptedCount: number;
+}
+
 // ─── Mapping ──────────────────────────────────────────────────────────────────
 
 export type CanonicalField =

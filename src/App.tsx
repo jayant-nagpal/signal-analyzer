@@ -6,7 +6,7 @@ import type {
 import { buildInitialMapping } from './lib/mapping';
 import { normalizeRows } from './lib/normalize';
 import { runThrottle } from './lib/throttle';
-import { computePortfolio, computeCounterfactual } from './lib/portfolio';
+import { computePortfolio, computeCounterfactual, computeBestCap } from './lib/portfolio';
 import { parseFile } from './lib/parse/parseFile';
 import { DEFAULT_CAP, DEFAULT_POSITION_SIZE, DEFAULT_START_TIME, DEFAULT_END_TIME } from './lib/constants';
 import { SAMPLE_RAW_ROWS } from './data/sampleSignals';
@@ -120,6 +120,14 @@ export default function App() {
       positionSize,
     );
   }, [throttleResult, effectiveConfig.signalCap, positionSize]);
+
+  // Best cap scan
+  const bestCapResult = useMemo(() => {
+    if (!throttleResult) return null;
+    const inWindow = [...throttleResult.acceptedSignals, ...throttleResult.skippedSignals];
+    if (inWindow.length === 0) return null;
+    return computeBestCap(inWindow, positionSize);
+  }, [throttleResult, positionSize]);
 
   // ── Scenario recording ─────────────────────────────────────────────────────
   const scheduleScenarioRecord = useCallback((
@@ -329,6 +337,7 @@ export default function App() {
               throttleResult={throttleResult}
               portfolioResult={portfolioResult!}
               counterfactual={counterfactualResult}
+              bestCap={bestCapResult}
               windowStart={effectiveConfig.startTime}
               windowEnd={effectiveConfig.endTime}
               signalCap={effectiveConfig.signalCap}

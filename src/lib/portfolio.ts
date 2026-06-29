@@ -1,4 +1,4 @@
-import type { SignalDecision, PortfolioResult, SignalPortfolioContribution, CounterfactualResult } from './types';
+import type { SignalDecision, PortfolioResult, SignalPortfolioContribution, CounterfactualResult, BestCapResult } from './types';
 
 export function computePortfolio(
   acceptedSignals: SignalDecision[],
@@ -61,12 +61,36 @@ export function computeCounterfactual(
   positionSize: number,
 ): CounterfactualResult {
   const n = Math.min(signalCap, skippedSignals.length);
-  // Take first N skipped signals by arrival order
   const batch = [...skippedSignals]
     .sort((a, b) => (a.arrivalRank ?? 0) - (b.arrivalRank ?? 0))
     .slice(0, n);
-
   const netReturn = batch.reduce((s, sig) => s + sig.netReturn * positionSize, 0);
-
   return { n, netReturn, signals: batch };
+}
+
+/**
+ * Scans caps 1..inWindowSignals.length and returns the cap that yields the
+ * highest net portfolio return. Used to show the theoretically best cap.
+ */
+export function computeBestCap(
+  inWindowSignals: SignalDecision[],
+  positionSize: number,
+): BestCapResult {
+  // inWindowSignals are already sorted by arrival rank (accepted + skipped merged)
+  const sorted = [...inWindowSignals].sort((a, b) => (a.arrivalRank ?? 0) - (b.arrivalRank ?? 0));
+  let bestCap = 1;
+  let bestNet = -Infinity;
+  let bestAccepted = 0;
+
+  for (let cap = 1; cap <= sorted.length; cap++) {
+    const batch = sorted.slice(0, cap);
+    const net = batch.reduce((s, sig) => s + sig.netReturn * positionSize, 0);
+    if (net > bestNet) {
+      bestNet = net;
+      bestCap = cap;
+      bestAccepted = cap;
+    }
+  }
+
+  return { cap: bestCap, netReturn: bestNet, acceptedCount: bestAccepted };
 }
