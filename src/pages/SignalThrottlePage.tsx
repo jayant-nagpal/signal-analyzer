@@ -1,49 +1,47 @@
-import type { ThrottleResult, CounterfactualResult, PortfolioResult, BestCapResult, ThrottleConfig } from '../lib/types';
+import type { ThrottleResult, CounterfactualResult, PortfolioResult, BestCapResult } from '../lib/types';
 import { VerdictBanner } from '../components/VerdictBanner';
 import { KpiCard } from '../components/KpiCard';
 import { SignalTimeline } from '../components/SignalTimeline';
 import { SignalTable } from '../components/SignalTable';
-import { formatSignedPercent } from '../lib/format';
+import { formatSignedPercent, formatPercent } from '../lib/format';
 
 interface Props {
   throttleResult: ThrottleResult;
   portfolioResult: PortfolioResult;
   counterfactual: CounterfactualResult | null;
   bestCap: BestCapResult | null;
-  config: ThrottleConfig;
   windowStart: string;
   windowEnd: string;
   signalCap: number;
-  positionSize: number;
 }
 
-function buildVerdict(result: ThrottleResult, portfolio: PortfolioResult, holdMins: number): React.ReactNode {
-  const { acceptedCount, skippedCount, inWindowCount, outsideWindowCount, ignoredHoldCount, batchCount } = result.summary;
+function buildVerdict(result: ThrottleResult, portfolio: PortfolioResult): React.ReactNode {
+  const { acceptedCount, skippedCount, inWindowCount, outsideWindowCount } = result.summary;
 
   if (inWindowCount === 0) {
     return (
-      <span>No signals arrived inside this window. Widen the time window or check the event_date mapping.</span>
+      <span>No signals arrived inside this window. Widen the time window or check your event_date column.</span>
     );
   }
 
-  const capWarn = portfolio.capitalWarning === 'red' ? (
-    <span className="v-warn"> Capital exceeds 100% — reduce cap or position size.</span>
-  ) : portfolio.capitalWarning === 'amber' ? (
-    <span className="v-warn-amber"> 80%+ of portfolio deployed.</span>
-  ) : null;
+  const capWarn = portfolio.capitalWarning === 'red'
+    ? <span className="v-warn"> Capital exceeds 100%.</span>
+    : portfolio.capitalWarning === 'amber'
+    ? <span className="v-warn-amber"> Over 80% of portfolio deployed.</span>
+    : null;
+
+  const stopWarn = portfolio.stopLossCount > 0
+    ? <span className="v-warn-amber"> {portfolio.stopLossCount} stop-loss exit{portfolio.stopLossCount > 1 ? 's' : ''} in accepted set.</span>
+    : null;
 
   return (
     <span>
-      <span className="v-num">{inWindowCount}</span> signals in window.{' '}
+      <span className="v-num">{inWindowCount}</span> in window.{' '}
       Accepted <span className="v-num v-pos">{acceptedCount}</span>.{' '}
       Skipped <span className="v-num v-neg">{skippedCount}</span>.{' '}
-      <span className="v-num">{outsideWindowCount}</span> outside window (ignored).
-      {holdMins > 0 && ignoredHoldCount > 0 && (
-        <> <span className="v-num">{ignoredHoldCount}</span> ignored during hold
-        {batchCount > 1 && <> across <span className="v-num">{batchCount}</span> batches</>}.
-        </>
-      )}
+      <span className="v-num">{outsideWindowCount}</span> outside window.
       {capWarn}
+      {stopWarn}
     </span>
   );
 }
@@ -53,13 +51,11 @@ export function SignalThrottlePage({
   portfolioResult,
   counterfactual,
   bestCap,
-  config,
   windowStart,
   windowEnd,
   signalCap,
 }: Props) {
-  const { summary, acceptedSignals, skippedSignals, outsideWindowSignals, filteredOutSignals, ignoredHoldSignals } = throttleResult;
-  const holdMins = config.holdingPeriodMins ?? 0;
+  const { summary, acceptedSignals, skippedSignals, outsideWindowSignals, filteredOutSignals } = throttleResult;
 
   const allTimelineSignals = [
     ...acceptedSignals,
@@ -67,63 +63,55 @@ export function SignalThrottlePage({
     ...outsideWindowSignals,
   ];
 
-  // Counterfactual: "if you had taken skipped signals instead"
-  const skippedCounterfactual = counterfactual && counterfactual.n > 0 ? (
-    <div className="counterfactual-box">
-      <div className="counterfactual-main">
-        If you had taken the next <strong>{counterfactual.n}</strong> skipped signal{counterfactual.n !== 1 ? 's' : ''} instead,
-        net return would have been{' '}
-        <span
-          className={counterfactual.netReturn >= 0 ? 'td-pos' : 'td-neg'}
-          style={{ fontFamily: 'var(--font-mono)' }}
-        >
-          {formatSignedPercent(counterfactual.netReturn)}
-        </span>.
-      </div>
-      {bestCap && bestCap.cap !== signalCap && (
-        <div className="counterfactual-main" style={{ marginTop: 6 }}>
-          Best cap across all options:{' '}
-          <strong>cap={bestCap.cap}</strong> →{' '}
-          <span
-            className={bestCap.netReturn >= 0 ? 'td-pos' : 'td-neg'}
-            style={{ fontFamily: 'var(--font-mono)' }}
-          >
-            {formatSignedPercent(bestCap.netReturn)}
-          </span>
-          {' '}net ({bestCap.acceptedCount} signals accepted).
+  // Counterfactual box
+  const skippedCounterfactual = (
+    <>
+      {counterfactual && counterfactual.n > 0 && (
+        <div className="counterfactual-box">
+          <div className="counterfactual-main">
+            If you had taken the next <strong>{counterfactual.n}</strong> skipped signal{counterfactual.n !== 1 ? 's' : ''} instead,
+            net return would have been{' '}
+            <span
+              className={counterfactual.netReturn >= 0 ? 'td-pos' : 'td-neg'}
+              style={{ fontFamily: 'var(--font-mono)' }}
+            >
+              {formatSignedPercent(counterfactual.netReturn)}
+            </span>.
+          </div>
+          <div className="counterfactual-note">
+            Counterfactual only. The throttle does not know future returns.
+          </div>
         </div>
       )}
-      <div className="counterfactual-note">
-        Counterfactual only. The throttle does not know future returns.
-      </div>
-    </div>
-  ) : bestCap && bestCap.cap !== signalCap ? (
-    <div className="counterfactual-box">
-      <div className="counterfactual-main">
-        Best cap across all options:{' '}
-        <strong>cap={bestCap.cap}</strong> →{' '}
-        <span
-          className={bestCap.netReturn >= 0 ? 'td-pos' : 'td-neg'}
-          style={{ fontFamily: 'var(--font-mono)' }}
-        >
-          {formatSignedPercent(bestCap.netReturn)}
-        </span>
-        {' '}net ({bestCap.acceptedCount} signals accepted).
-      </div>
-      <div className="counterfactual-note">
-        Counterfactual only. The throttle does not know future returns.
-      </div>
-    </div>
-  ) : null;
+      {bestCap && bestCap.cap !== signalCap && (
+        <div className="counterfactual-box" style={{ marginTop: counterfactual && counterfactual.n > 0 ? 8 : 0 }}>
+          <div className="counterfactual-main">
+            Best cap across all options:{' '}
+            <strong>cap = {bestCap.cap}</strong> →{' '}
+            <span
+              className={bestCap.netReturn >= 0 ? 'td-pos' : 'td-neg'}
+              style={{ fontFamily: 'var(--font-mono)' }}
+            >
+              {formatSignedPercent(bestCap.netReturn)}
+            </span>
+            {' '}net ({bestCap.acceptedCount} signals).
+          </div>
+          <div className="counterfactual-note">
+            Counterfactual only. The throttle does not know future returns.
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="page-scroll">
       <VerdictBanner
         question="Which signals would we actually trade under the cap?"
-        answer={buildVerdict(throttleResult, portfolioResult, holdMins)}
+        answer={buildVerdict(throttleResult, portfolioResult)}
       />
 
-      {/* KPI Summary */}
+      {/* KPI grid */}
       <div className="kpi-grid">
         <KpiCard label="Total signals" value={summary.totalSignals} tone="neutral" />
         <KpiCard label="In window" value={summary.inWindowCount} tone="accent" />
@@ -131,9 +119,47 @@ export function SignalThrottlePage({
         <KpiCard label="Skipped" value={summary.skippedCount} tone={summary.skippedCount > 0 ? 'negative' : 'neutral'} />
         <KpiCard label="Outside window" value={summary.outsideWindowCount} tone="neutral" />
         {summary.filteredOutCount > 0 && (
-          <KpiCard label="Filtered by sector" value={summary.filteredOutCount} tone="warning" />
+          <KpiCard label="Sector filtered" value={summary.filteredOutCount} tone="warning" />
         )}
       </div>
+
+      {/* Net return + capital — from file, not computed */}
+      {portfolioResult.acceptedCount > 0 && (
+        <div className="kpi-grid" style={{ marginTop: 0 }}>
+          <KpiCard
+            label="Net return"
+            value={formatSignedPercent(portfolioResult.netReturn)}
+            tone={portfolioResult.netReturn >= 0 ? 'positive' : 'negative'}
+          />
+          <KpiCard
+            label="Gross return"
+            value={formatSignedPercent(portfolioResult.grossReturn)}
+            tone="neutral"
+          />
+          <KpiCard
+            label="Transaction costs"
+            value={formatSignedPercent(portfolioResult.transactionCosts)}
+            tone="warning"
+          />
+          <KpiCard
+            label="Capital deployed"
+            value={formatPercent(portfolioResult.capitalDeployed)}
+            tone={portfolioResult.capitalWarning === 'red' ? 'negative' : portfolioResult.capitalWarning === 'amber' ? 'warning' : 'neutral'}
+          />
+          <KpiCard
+            label="Win rate"
+            value={formatPercent(portfolioResult.winRate)}
+            tone={portfolioResult.winRate >= 0.5 ? 'positive' : 'negative'}
+          />
+          {portfolioResult.stopLossCount > 0 && (
+            <KpiCard
+              label="Stop-loss exits"
+              value={portfolioResult.stopLossCount}
+              tone="warning"
+            />
+          )}
+        </div>
+      )}
 
       {/* Timeline */}
       {allTimelineSignals.length > 0 && (
@@ -144,16 +170,16 @@ export function SignalThrottlePage({
         />
       )}
 
-      {/* Accepted signals */}
+      {/* Accepted */}
       <SignalTable
         title="Accepted signals"
         subtitle="First come, first serve. The throttle does not look ahead."
         signals={acceptedSignals}
       />
 
-      {/* Skipped signals */}
+      {/* Skipped */}
       <SignalTable
-        title="Skipped signals"
+        title={`Skipped signals (${summary.skippedCount})`}
         subtitle="These arrived after the cap was full."
         signals={skippedSignals}
         collapsible
@@ -161,33 +187,22 @@ export function SignalThrottlePage({
         footer={skippedCounterfactual}
       />
 
-      {/* Outside window — collapsed by default */}
+      {/* Outside window */}
       {outsideWindowSignals.length > 0 && (
         <SignalTable
-          title="Outside window"
-          subtitle="Signals before or after the selected time window. Ignored by throttle."
+          title={`Outside window (${outsideWindowSignals.length})`}
+          subtitle="Signals before or after the selected time window. Not counted."
           signals={outsideWindowSignals}
           collapsible
           defaultCollapsed
         />
       )}
 
-      {/* Ignored during hold — collapsed by default */}
-      {ignoredHoldSignals.length > 0 && (
-        <SignalTable
-          title={`Ignored during hold (${ignoredHoldSignals.length})`}
-          subtitle={`These signals arrived while the portfolio was in a ${holdMins}-minute holding period.`}
-          signals={ignoredHoldSignals}
-          collapsible
-          defaultCollapsed
-        />
-      )}
-
-      {/* Filtered out — collapsed by default */}
+      {/* Sector filtered */}
       {filteredOutSignals.length > 0 && (
         <SignalTable
-          title="Filtered by sector"
-          subtitle="These sectors were toggled off and did not take cap slots."
+          title={`Sector filtered (${filteredOutSignals.length})`}
+          subtitle="These sectors were toggled off."
           signals={filteredOutSignals}
           collapsible
           defaultCollapsed

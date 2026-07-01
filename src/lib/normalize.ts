@@ -158,14 +158,21 @@ export function normalizeRows(
     const signalRaw = parseNumber(get(row, m.signal.sourceColumn));
     const weightRaw = parseNumber(get(row, m.bet_open_weight.sourceColumn));
     const betOpenDateRaw = parseDate(get(row, m.bet_open_date.sourceColumn));
+    const betCloseDateRaw = parseDate(get(row, m.bet_close_date?.sourceColumn ?? null));
     const priceVsEma20 = parseNumber(get(row, m.price_vs_ema20.sourceColumn));
     const priceVsSma50 = parseNumber(get(row, m.price_vs_sma50.sourceColumn));
     const rlst = parseNumber(get(row, m.rlst.sourceColumn));
     const hotnessRank = parseNumber(get(row, m.hotness_rank.sourceColumn));
+    const liquidityRank = parseNumber(get(row, m.liquidity_rank?.sourceColumn ?? null));
+    const wLiq = parseNumber(get(row, m.w_liq?.sourceColumn ?? null));
 
-    if (Math.abs(estTc) > Math.abs(betFinalReturn) && betFinalReturn !== 0) {
-      warnings.push({ rowIndex: rowNum, field: 'est_tc', reason: 'Cost exceeds absolute return' });
-    }
+    // exit_type: 0 = normal, -1 = stop-loss
+    const exitTypeRaw = parseNumber(get(row, m.exit_type?.sourceColumn ?? null));
+    const exitType: 0 | -1 | null = exitTypeRaw === -1 ? -1 : exitTypeRaw === 0 ? 0 : null;
+
+    // bet_type: 'Active' | 'New' | 'Close'
+    const betTypeRaw = get(row, m.bet_type?.sourceColumn ?? null);
+    const betType = betTypeRaw != null ? String(betTypeRaw).trim() : null;
 
     signals.push({
       rowId: id,
@@ -173,17 +180,22 @@ export function normalizeRows(
       eventDate,
       osid,
       betOpenDate: betOpenDateRaw ?? null,
+      betCloseDate: betCloseDateRaw ?? null,
       betFinalReturn,
       estTc,
       daysHeld: daysHeldRaw ?? null,
+      exitType,
       sectorCode: sectorCodeNum,
       sectorName: sectorNameStr,
-      signal: signalRaw ?? (m.signal.sourceColumn ? signalRaw : 1),
+      signal: signalRaw ?? null,
       betOpenWeight: weightRaw ?? null,
+      betType,
       priceVsEma20: priceVsEma20 ?? null,
       priceVsSma50: priceVsSma50 ?? null,
       rlst: rlst ?? null,
       hotnessRank: hotnessRank ?? null,
+      liquidityRank: liquidityRank ?? null,
+      wLiq: wLiq ?? null,
       sourceRow: row,
     });
   }

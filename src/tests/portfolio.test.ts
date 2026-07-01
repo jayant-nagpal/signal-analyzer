@@ -30,42 +30,42 @@ function getAcceptedSignals(cap: number) {
 }
 
 describe('Portfolio calculations', () => {
-  it('Test 1: sample first 5 signals at 2% position => net ≈ -0.0005894', () => {
+  it('Test 1: sample first 5 signals — net return is sum of (netReturn * |betOpenWeight|)', () => {
     const accepted = getAcceptedSignals(5);
     expect(accepted.length).toBe(5);
-    const portfolio = computePortfolio(accepted, 0.02);
-    // Expected: sum of net * 0.02
-    // sig1: (-0.0095 - 0.00057) = -0.01007 * 0.02 = -0.0002014
-    // sig2: (-0.0148 - 0.00069) = -0.01549 * 0.02 = -0.0003098
-    // sig3: (-0.0033 - 0.00067) = -0.00397 * 0.02 = -0.0000794
-    // sig4: (0.0086 - 0.00041)  = 0.00819  * 0.02 = 0.0001638
-    // sig5: (-0.0076 - 0.00053) = -0.00813 * 0.02 = -0.0001626
-    // Total ≈ -0.0005894
-    expect(portfolio.netReturn).toBeCloseTo(-0.0005894, 5);
+    const portfolio = computePortfolio(accepted);
+    // position size comes from bet_open_weight (0.02 per signal)
+    // net return = sum of sig.netReturn * Math.abs(sig.betOpenWeight ?? 0.02)
+    const expected = accepted.reduce((sum, s) => {
+      const pos = Math.abs(s.betOpenWeight ?? 0.02);
+      return sum + (s.netReturn ?? 0) * pos;
+    }, 0);
+    expect(portfolio.netReturn).toBeCloseTo(expected, 5);
   });
 
-  it('Test 2: capital deployed = accepted count * position size', () => {
+  it('Test 2: capital deployed = sum of |betOpenWeight| across accepted signals', () => {
     const accepted = getAcceptedSignals(5);
-    const portfolio = computePortfolio(accepted, 0.02);
-    expect(portfolio.capitalDeployed).toBeCloseTo(0.10, 6);
+    const portfolio = computePortfolio(accepted);
+    const expected = accepted.reduce((sum, s) => sum + Math.abs(s.betOpenWeight ?? 0.02), 0);
+    expect(portfolio.capitalDeployed).toBeCloseTo(expected, 6);
   });
 
   it('Test 3: win rate counts netReturn > 0', () => {
     const accepted = getAcceptedSignals(5);
-    const portfolio = computePortfolio(accepted, 0.02);
+    const portfolio = computePortfolio(accepted);
     const wins = accepted.filter(s => s.netReturn > 0).length;
     expect(portfolio.winRate).toBeCloseTo(wins / accepted.length, 6);
   });
 
   it('Test 4: transaction costs always deducted', () => {
     const accepted = getAcceptedSignals(5);
-    const portfolio = computePortfolio(accepted, 0.02);
+    const portfolio = computePortfolio(accepted);
     expect(portfolio.transactionCosts).toBeGreaterThan(0);
     expect(portfolio.netReturn).toBeLessThan(portfolio.grossReturn);
   });
 
   it('Test 5: no accepted signals returns safe zero values', () => {
-    const portfolio = computePortfolio([], 0.02);
+    const portfolio = computePortfolio([]);
     expect(portfolio.acceptedCount).toBe(0);
     expect(portfolio.grossReturn).toBe(0);
     expect(portfolio.netReturn).toBe(0);
