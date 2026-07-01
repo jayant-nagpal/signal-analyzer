@@ -23,7 +23,6 @@ function getAcceptedSignals(cap: number) {
     startTime: '12:15',
     endTime: '13:15',
     signalCap: cap,
-    holdingPeriodMins: 0,
     selectedSectors: ALL_SECTORS,
   });
   return result.acceptedSignals;

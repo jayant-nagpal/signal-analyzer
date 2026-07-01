@@ -110,31 +110,6 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Holding period */}
-      <div className="sidebar-section">
-        <div className="sidebar-control-row">
-          <div className="sidebar-control-label">
-            <span>Holding period</span>
-            <span className="sidebar-control-value">
-              {config.holdingPeriodMins === 0 ? 'Off' : `${config.holdingPeriodMins} min`}
-            </span>
-          </div>
-          <input
-            type="range"
-            className="sidebar-slider"
-            min={0} max={480} step={5}
-            value={config.holdingPeriodMins}
-            onChange={e => onConfigChange({ ...config, holdingPeriodMins: parseInt(e.target.value) })}
-            aria-label={`Holding period: ${config.holdingPeriodMins === 0 ? 'Off' : config.holdingPeriodMins + ' minutes'}`}
-          />
-        </div>
-        {config.holdingPeriodMins > 0 && (
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
-            Signals during hold are ignored. New batch opens after {config.holdingPeriodMins} min.
-          </div>
-        )}
-      </div>
-
       {/* Position size */}
       <div className="sidebar-section">
         <div className="sidebar-control-row">
@@ -182,18 +157,6 @@ export function Sidebar({
               <div className="summary-row">
                 <span className="summary-label">Filtered out</span>
                 <span className="summary-value">{throttleResult.summary.filteredOutCount}</span>
-              </div>
-            )}
-            {throttleResult.summary.ignoredHoldCount > 0 && (
-              <div className="summary-row">
-                <span className="summary-label">Ignored (hold)</span>
-                <span className="summary-value">{throttleResult.summary.ignoredHoldCount}</span>
-              </div>
-            )}
-            {throttleResult.summary.batchCount > 1 && (
-              <div className="summary-row">
-                <span className="summary-label">Batches</span>
-                <span className="summary-value accent">{throttleResult.summary.batchCount}</span>
               </div>
             )}
             {net !== null && (

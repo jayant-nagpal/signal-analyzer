@@ -1,4 +1,4 @@
-import type { ThrottleResult, CounterfactualResult, PortfolioResult, BestCapResult, ThrottleConfig } from '../lib/types';
+import type { ThrottleResult, CounterfactualResult, PortfolioResult, BestCapResult } from '../lib/types';
 import { VerdictBanner } from '../components/VerdictBanner';
 import { KpiCard } from '../components/KpiCard';
 import { SignalTimeline } from '../components/SignalTimeline';
@@ -10,15 +10,14 @@ interface Props {
   portfolioResult: PortfolioResult;
   counterfactual: CounterfactualResult | null;
   bestCap: BestCapResult | null;
-  config: ThrottleConfig;
   windowStart: string;
   windowEnd: string;
   signalCap: number;
   positionSize: number;
 }
 
-function buildVerdict(result: ThrottleResult, portfolio: PortfolioResult, holdMins: number): React.ReactNode {
-  const { acceptedCount, skippedCount, inWindowCount, outsideWindowCount, ignoredHoldCount, batchCount } = result.summary;
+function buildVerdict(result: ThrottleResult, portfolio: PortfolioResult): React.ReactNode {
+  const { acceptedCount, skippedCount, inWindowCount, outsideWindowCount } = result.summary;
 
   if (inWindowCount === 0) {
     return (
@@ -38,11 +37,6 @@ function buildVerdict(result: ThrottleResult, portfolio: PortfolioResult, holdMi
       Accepted <span className="v-num v-pos">{acceptedCount}</span>.{' '}
       Skipped <span className="v-num v-neg">{skippedCount}</span>.{' '}
       <span className="v-num">{outsideWindowCount}</span> outside window (ignored).
-      {holdMins > 0 && ignoredHoldCount > 0 && (
-        <> <span className="v-num">{ignoredHoldCount}</span> ignored during hold
-        {batchCount > 1 && <> across <span className="v-num">{batchCount}</span> batches</>}.
-        </>
-      )}
       {capWarn}
     </span>
   );
@@ -53,13 +47,11 @@ export function SignalThrottlePage({
   portfolioResult,
   counterfactual,
   bestCap,
-  config,
   windowStart,
   windowEnd,
   signalCap,
 }: Props) {
-  const { summary, acceptedSignals, skippedSignals, outsideWindowSignals, filteredOutSignals, ignoredHoldSignals } = throttleResult;
-  const holdMins = config.holdingPeriodMins ?? 0;
+  const { summary, acceptedSignals, skippedSignals, outsideWindowSignals, filteredOutSignals } = throttleResult;
 
   const allTimelineSignals = [
     ...acceptedSignals,
@@ -120,7 +112,7 @@ export function SignalThrottlePage({
     <div className="page-scroll">
       <VerdictBanner
         question="Which signals would we actually trade under the cap?"
-        answer={buildVerdict(throttleResult, portfolioResult, holdMins)}
+        answer={buildVerdict(throttleResult, portfolioResult)}
       />
 
       {/* KPI Summary */}
@@ -167,17 +159,6 @@ export function SignalThrottlePage({
           title="Outside window"
           subtitle="Signals before or after the selected time window. Ignored by throttle."
           signals={outsideWindowSignals}
-          collapsible
-          defaultCollapsed
-        />
-      )}
-
-      {/* Ignored during hold — collapsed by default */}
-      {ignoredHoldSignals.length > 0 && (
-        <SignalTable
-          title={`Ignored during hold (${ignoredHoldSignals.length})`}
-          subtitle={`These signals arrived while the portfolio was in a ${holdMins}-minute holding period.`}
-          signals={ignoredHoldSignals}
           collapsible
           defaultCollapsed
         />

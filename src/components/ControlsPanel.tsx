@@ -48,32 +48,6 @@ export function ControlsPanel({
         </div>
       </div>
 
-      {/* Holding period */}
-      <div className="controls-section">
-        <div className="control-label">
-          <span>Holding period</span>
-          <span className="control-value">
-            {config.holdingPeriodMins === 0 ? 'Off' : `${config.holdingPeriodMins} min`}
-          </span>
-        </div>
-        <input
-          type="range"
-          className="control-slider"
-          min={0} max={480} step={5}
-          value={config.holdingPeriodMins}
-          onChange={e => onConfigChange({ ...config, holdingPeriodMins: parseInt(e.target.value) })}
-          aria-label={`Holding period: ${config.holdingPeriodMins === 0 ? 'Off' : config.holdingPeriodMins + ' min'}`}
-        />
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
-          <span>Off</span><span>8 h</span>
-        </div>
-        {config.holdingPeriodMins > 0 && (
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
-            Signals arriving during the hold window are ignored. A new batch (up to cap) opens after each {config.holdingPeriodMins}-min hold expires.
-          </div>
-        )}
-      </div>
-
       {/* Position size */}
       <div className="controls-section">
         <div className="control-label">
