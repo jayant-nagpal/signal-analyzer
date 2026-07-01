@@ -1,26 +1,27 @@
 import { Upload } from 'lucide-react';
 import type { ThrottleConfig, DatasetMetadata, PortfolioResult, ThrottleResult } from '../lib/types';
-import { formatSignedPercent } from '../lib/format';
+import { formatSignedPercent, formatPercent } from '../lib/format';
 
 interface Props {
   metadata: DatasetMetadata | null;
   config: ThrottleConfig;
+  positionSize: number;
   throttleResult: ThrottleResult | null;
   portfolioResult: PortfolioResult | null;
   eventIds: string[];
   selectedEventId: string;
   onEventChange: (id: string) => void;
   onConfigChange: (c: ThrottleConfig) => void;
+  onPositionSizeChange: (v: number) => void;
   onUploadClick: () => void;
 }
 
 export function Sidebar({
-  metadata, config, throttleResult, portfolioResult,
+  metadata, config, positionSize, throttleResult, portfolioResult,
   eventIds, selectedEventId, onEventChange,
-  onConfigChange, onUploadClick,
+  onConfigChange, onPositionSizeChange, onUploadClick,
 }: Props) {
   const net = portfolioResult?.netReturn ?? null;
-  const capital = portfolioResult?.capitalDeployed ?? null;
 
   return (
     <aside className="sidebar" aria-label="Controls">
@@ -37,40 +38,34 @@ export function Sidebar({
           <>
             <div className="sidebar-dataset">{metadata.fileName}</div>
             <div className="sidebar-meta">{metadata.rowsUsable.toLocaleString()} usable rows</div>
-            {metadata.isSample && (
-              <span className="badge-sample" style={{ marginTop: 4, display: 'inline-block' }}>Sample</span>
-            )}
+            {metadata.isSample && <span className="badge-sample" style={{ marginTop: 4, display: 'inline-block' }}>Sample</span>}
           </>
         ) : (
           <div className="sidebar-meta">No file loaded</div>
         )}
-        <button
-          className="upload-btn"
-          onClick={onUploadClick}
-          style={{ marginTop: 8 }}
-          aria-label="Upload or change file"
-        >
+        <button className="upload-btn" onClick={onUploadClick} style={{ marginTop: 8 }} aria-label="Upload or change file">
           <Upload size={13} />
           {metadata ? 'Change file' : 'Upload file'}
         </button>
       </div>
 
-      {/* Event selector — only shown when multiple events */}
+      {/* Event selector */}
       {eventIds.length > 1 && (
         <div className="sidebar-section">
-          <div className="sidebar-label">Event</div>
+          <div className="sidebar-label">Event ID</div>
           <select
             className="sidebar-select"
             value={selectedEventId}
             onChange={e => onEventChange(e.target.value)}
-            aria-label="Select event"
+            aria-label="Select event ID"
           >
             {eventIds.map(id => <option key={id} value={id}>{id}</option>)}
           </select>
+          <div className="sidebar-meta" style={{ marginTop: 4 }}>Analyzing one event at a time.</div>
         </div>
       )}
 
-      {/* Time window */}
+      {/* Window */}
       <div className="sidebar-section">
         <div className="sidebar-label">Time window</div>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -95,12 +90,9 @@ export function Sidebar({
             />
           </div>
         </div>
-        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
-          Overnight windows supported (end &lt; start).
-        </div>
       </div>
 
-      {/* Signal cap */}
+      {/* Cap */}
       <div className="sidebar-section">
         <div className="sidebar-control-row">
           <div className="sidebar-control-label">
@@ -116,8 +108,48 @@ export function Sidebar({
             aria-label={`Signal cap: ${config.signalCap}`}
           />
         </div>
-        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
-          Max signals accepted. First come, first serve.
+      </div>
+
+      {/* Holding period */}
+      <div className="sidebar-section">
+        <div className="sidebar-control-row">
+          <div className="sidebar-control-label">
+            <span>Holding period</span>
+            <span className="sidebar-control-value">
+              {config.holdingPeriodMins === 0 ? 'Off' : `${config.holdingPeriodMins} min`}
+            </span>
+          </div>
+          <input
+            type="range"
+            className="sidebar-slider"
+            min={0} max={480} step={5}
+            value={config.holdingPeriodMins}
+            onChange={e => onConfigChange({ ...config, holdingPeriodMins: parseInt(e.target.value) })}
+            aria-label={`Holding period: ${config.holdingPeriodMins === 0 ? 'Off' : config.holdingPeriodMins + ' minutes'}`}
+          />
+        </div>
+        {config.holdingPeriodMins > 0 && (
+          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+            Signals during hold are ignored. New batch opens after {config.holdingPeriodMins} min.
+          </div>
+        )}
+      </div>
+
+      {/* Position size */}
+      <div className="sidebar-section">
+        <div className="sidebar-control-row">
+          <div className="sidebar-control-label">
+            <span>Position size</span>
+            <span className="sidebar-control-value">{formatPercent(positionSize)}</span>
+          </div>
+          <input
+            type="range"
+            className="sidebar-slider"
+            min={0.5} max={10} step={0.5}
+            value={positionSize * 100}
+            onChange={e => onPositionSizeChange(parseFloat(e.target.value) / 100)}
+            aria-label={`Position size: ${formatPercent(positionSize)}`}
+          />
         </div>
       </div>
 
@@ -148,29 +180,29 @@ export function Sidebar({
             </div>
             {throttleResult.summary.filteredOutCount > 0 && (
               <div className="summary-row">
-                <span className="summary-label">Sector filtered</span>
+                <span className="summary-label">Filtered out</span>
                 <span className="summary-value">{throttleResult.summary.filteredOutCount}</span>
               </div>
             )}
-
-            {/* Net return + capital — from file data */}
+            {throttleResult.summary.ignoredHoldCount > 0 && (
+              <div className="summary-row">
+                <span className="summary-label">Ignored (hold)</span>
+                <span className="summary-value">{throttleResult.summary.ignoredHoldCount}</span>
+              </div>
+            )}
+            {throttleResult.summary.batchCount > 1 && (
+              <div className="summary-row">
+                <span className="summary-label">Batches</span>
+                <span className="summary-value accent">{throttleResult.summary.batchCount}</span>
+              </div>
+            )}
             {net !== null && (
-              <>
-                <div className="summary-row" style={{ marginTop: 4, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                  <span className="summary-label">Net return</span>
-                  <span className={`summary-value ${net >= 0 ? 'positive' : 'negative'}`}>
-                    {formatSignedPercent(net)}
-                  </span>
-                </div>
-                {capital !== null && (
-                  <div className="summary-row">
-                    <span className="summary-label">Capital deployed</span>
-                    <span className={`summary-value ${capital > 1.0 ? 'negative' : capital > 0.8 ? 'warning' : ''}`}>
-                      {(capital * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                )}
-              </>
+              <div className="summary-row" style={{ marginTop: 4, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                <span className="summary-label">Net portfolio</span>
+                <span className={`summary-value ${net >= 0 ? 'positive' : 'negative'}`}>
+                  {formatSignedPercent(net)}
+                </span>
+              </div>
             )}
           </div>
         </div>
@@ -178,8 +210,8 @@ export function Sidebar({
 
       <div className="sidebar-footer">
         <div className="sidebar-footer-text">
-          First come, first serve.<br />
-          Position size from file.
+          First come, first serve throttle.<br />
+          The throttle does not look ahead.
         </div>
       </div>
     </aside>

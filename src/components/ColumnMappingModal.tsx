@@ -7,9 +7,7 @@ import type { RawRow } from '../lib/types';
 const ALL_FIELDS: CanonicalField[] = [
   'event_id', 'event_date', 'osid', 'bet_final_return', 'est_tc',
   'sector_group', 'days_held', 'signal', 'bet_open_weight',
-  'bet_open_date', 'bet_close_date', 'exit_type', 'bet_type',
-  'liquidity_rank', 'w_liq',
-  'price_vs_ema20', 'price_vs_sma50', 'rlst', 'hotness_rank',
+  'bet_open_date', 'price_vs_ema20', 'price_vs_sma50', 'rlst', 'hotness_rank',
 ];
 
 const FIELD_LABELS: Record<CanonicalField, string> = {
@@ -17,17 +15,12 @@ const FIELD_LABELS: Record<CanonicalField, string> = {
   event_date: 'Event date / time',
   osid: 'Stock ID (osid)',
   bet_open_date: 'Position open date',
-  bet_close_date: 'Position close date',
   bet_final_return: 'Final return',
   est_tc: 'Transaction cost',
   days_held: 'Days held',
   sector_group: 'Sector',
   signal: 'Signal strength',
   bet_open_weight: 'Position weight',
-  exit_type: 'Exit type',
-  bet_type: 'Bet type',
-  liquidity_rank: 'Liquidity rank',
-  w_liq: 'Liquidity weight',
   price_vs_ema20: 'Price vs EMA20',
   price_vs_sma50: 'Price vs SMA50',
   rlst: 'Relative strength',

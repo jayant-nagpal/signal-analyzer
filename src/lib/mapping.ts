@@ -6,15 +6,9 @@ export function buildInitialMapping(sourceColumns: string[]): ColumnMapping {
   const detected = detectMapping(sourceColumns);
 
   const allFields: CanonicalField[] = [
-    'event_id', 'event_date', 'osid',
-    'bet_open_date', 'bet_close_date',
-    'bet_final_return', 'est_tc',
-    'days_held', 'exit_type',
-    'sector_group', 'signal',
-    'bet_open_weight', 'bet_type',
-    'price_vs_ema20', 'price_vs_sma50',
-    'rlst', 'hotness_rank',
-    'liquidity_rank', 'w_liq',
+    'event_id', 'event_date', 'osid', 'bet_open_date', 'bet_final_return',
+    'est_tc', 'days_held', 'sector_group', 'signal', 'bet_open_weight',
+    'price_vs_ema20', 'price_vs_sma50', 'rlst', 'hotness_rank',
   ];
 
   const mapping = {} as ColumnMapping;

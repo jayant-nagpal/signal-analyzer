@@ -1,19 +1,22 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import type {
-  SignalRow, RawRow, ColumnMapping, DatasetMetadata, ThrottleConfig,
+  SignalRow, RawRow, ColumnMapping, DatasetMetadata,
+  ThrottleConfig, ActiveTab, ScenarioHistoryItem,
 } from './lib/types';
 import { buildInitialMapping } from './lib/mapping';
 import { normalizeRows } from './lib/normalize';
 import { runThrottle } from './lib/throttle';
 import { computePortfolio, computeCounterfactual, computeBestCap } from './lib/portfolio';
 import { parseFile } from './lib/parse/parseFile';
-import { DEFAULT_CAP, DEFAULT_START_TIME, DEFAULT_END_TIME } from './lib/constants';
+import { DEFAULT_CAP, DEFAULT_POSITION_SIZE, DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_HOLDING_PERIOD_MINS } from './lib/constants';
 import { SAMPLE_RAW_ROWS } from './data/sampleSignals';
 
 import { Sidebar } from './components/Sidebar';
+import { TabNav } from './components/TabNav';
 import { EmptyState } from './components/EmptyState';
 import { ColumnMappingModal } from './components/ColumnMappingModal';
 import { SignalThrottlePage } from './pages/SignalThrottlePage';
+import { PortfolioAnalyzerPage } from './pages/PortfolioAnalyzerPage';
 
 // ── Sample column mapping ──────────────────────────────────────────────────────
 const SAMPLE_COLUMNS = [
@@ -24,8 +27,8 @@ const SAMPLE_COLUMNS = [
 // ── Default time window detection ─────────────────────────────────────────────
 function detectDefaultWindow(signals: SignalRow[]): { startTime: string; endTime: string } {
   if (signals.length === 0) return { startTime: DEFAULT_START_TIME, endTime: DEFAULT_END_TIME };
-
-  // Find the earliest signal time and auto-set a 1-hour window
+  const has1215 = signals.some(s => s.eventDate.getHours() === 12 && s.eventDate.getMinutes() === 15);
+  if (has1215) return { startTime: '12:15', endTime: '13:15' };
   const earliest = signals[0].eventDate;
   const startH = earliest.getHours().toString().padStart(2, '0');
   const startM = earliest.getMinutes().toString().padStart(2, '0');
@@ -33,6 +36,18 @@ function detectDefaultWindow(signals: SignalRow[]): { startTime: string; endTime
   const endH = endDate.getHours().toString().padStart(2, '0');
   const endM = endDate.getMinutes().toString().padStart(2, '0');
   return { startTime: `${startH}:${startM}`, endTime: `${endH}:${endM}` };
+}
+
+// ── Scenario history helper ───────────────────────────────────────────────────
+function addScenario(
+  history: ScenarioHistoryItem[],
+  item: ScenarioHistoryItem,
+): ScenarioHistoryItem[] {
+  const filtered = history.filter(h =>
+    !(h.cap === item.cap && h.positionSize === item.positionSize &&
+      h.startTime === item.startTime && h.endTime === item.endTime)
+  );
+  return [item, ...filtered].slice(0, 3);
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -45,21 +60,25 @@ export default function App() {
   const [pendingColumns, setPendingColumns] = useState<string[]>([]);
 
   // UI state
+  const [activeTab, setActiveTab] = useState<ActiveTab>('throttle');
   const [showMapping, setShowMapping] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadStage, setUploadStage] = useState('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showEmpty, setShowEmpty] = useState(true);
 
-  // Config — only throttle controls: time window, cap, sectors
+  // Config
   const [config, setConfig] = useState<ThrottleConfig>({
     startTime: DEFAULT_START_TIME,
     endTime: DEFAULT_END_TIME,
     signalCap: DEFAULT_CAP,
-    holdingPeriodMins: 0,
+    holdingPeriodMins: DEFAULT_HOLDING_PERIOD_MINS,
     selectedSectors: new Set<string>(),
   });
+  const [positionSize, setPositionSize] = useState(DEFAULT_POSITION_SIZE);
   const [selectedEventId, setSelectedEventId] = useState<string>('');
+  const [scenarioHistory, setScenarioHistory] = useState<ScenarioHistoryItem[]>([]);
+  const scenarioTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Derived: filtered signals by eventId ───────────────────────────────────
   const filteredSignals = useMemo(() => {
@@ -87,11 +106,11 @@ export default function App() {
     return runThrottle(filteredSignals, effectiveConfig);
   }, [filteredSignals, effectiveConfig]);
 
-  // ── Derived: portfolio result (position size from file) ───────────────────
+  // ── Derived: portfolio result ──────────────────────────────────────────────
   const portfolioResult = useMemo(() => {
     if (!throttleResult) return null;
-    return computePortfolio(throttleResult.acceptedSignals);
-  }, [throttleResult]);
+    return computePortfolio(throttleResult.acceptedSignals, positionSize);
+  }, [throttleResult, positionSize]);
 
   // ── Derived: counterfactual ────────────────────────────────────────────────
   const counterfactualResult = useMemo(() => {
@@ -99,21 +118,61 @@ export default function App() {
     return computeCounterfactual(
       throttleResult.skippedSignals,
       effectiveConfig.signalCap,
+      positionSize,
     );
-  }, [throttleResult, effectiveConfig.signalCap]);
+  }, [throttleResult, effectiveConfig.signalCap, positionSize]);
 
-  // ── Derived: best cap scan ─────────────────────────────────────────────────
+  // Best cap scan
   const bestCapResult = useMemo(() => {
     if (!throttleResult) return null;
     const inWindow = [...throttleResult.acceptedSignals, ...throttleResult.skippedSignals];
     if (inWindow.length === 0) return null;
-    return computeBestCap(inWindow);
-  }, [throttleResult]);
+    return computeBestCap(inWindow, positionSize);
+  }, [throttleResult, positionSize]);
 
-  // ── Config change handler ─────────────────────────────────────────────────
+  // ── Scenario recording ─────────────────────────────────────────────────────
+  const scheduleScenarioRecord = useCallback((
+    cfg: ThrottleConfig,
+    ps: number,
+    accepted: number,
+    netReturn: number,
+    capitalDeployed: number,
+  ) => {
+    if (scenarioTimerRef.current) clearTimeout(scenarioTimerRef.current);
+    scenarioTimerRef.current = setTimeout(() => {
+      setScenarioHistory(h => addScenario(h, {
+        cap: cfg.signalCap,
+        positionSize: ps,
+        startTime: cfg.startTime,
+        endTime: cfg.endTime,
+        acceptedCount: accepted,
+        netReturn,
+        capitalDeployed,
+        timestamp: Date.now(),
+      }));
+    }, 500);
+  }, []);
+
+  // ── Config change handlers ────────────────────────────────────────────────
   const handleConfigChange = useCallback((newCfg: ThrottleConfig) => {
     setConfig(newCfg);
-  }, []);
+    if (portfolioResult) {
+      scheduleScenarioRecord(
+        newCfg, positionSize,
+        portfolioResult.acceptedCount, portfolioResult.netReturn, portfolioResult.capitalDeployed,
+      );
+    }
+  }, [portfolioResult, positionSize, scheduleScenarioRecord]);
+
+  const handlePositionSizeChange = useCallback((v: number) => {
+    setPositionSize(v);
+    if (portfolioResult) {
+      scheduleScenarioRecord(
+        effectiveConfig, v,
+        portfolioResult.acceptedCount, portfolioResult.netReturn, portfolioResult.capitalDeployed,
+      );
+    }
+  }, [portfolioResult, effectiveConfig, scheduleScenarioRecord]);
 
   // ── File upload flow ──────────────────────────────────────────────────────
   const handleFile = useCallback(async (file: File) => {
@@ -139,15 +198,16 @@ export default function App() {
 
   const handleMappingConfirm = useCallback(() => {
     if (!mapping || pendingRawRows.length === 0) return;
+    setUploadStage('Running throttle...');
     setShowMapping(false);
 
     try {
       const { signals: normalized, metadata: meta } = normalizeRows(
-        pendingRawRows, mapping, 'Uploaded file',
+        pendingRawRows, mapping, pendingColumns[0] ? 'Uploaded file' : 'Unknown',
       );
 
       if (normalized.length === 0) {
-        setUploadError('No usable signal rows were found. Check that event_date, osid, bet_final_return, and est_tc are mapped correctly.');
+        setUploadError('No usable signal rows were found.');
         return;
       }
 
@@ -156,20 +216,20 @@ export default function App() {
       const window = detectDefaultWindow(normalized);
 
       setSignals(normalized);
-      setMetadata(meta);
+      setMetadata({ ...meta, fileName: pendingRawRows.length + ' rows uploaded' });
       setSelectedEventId(firstEventId);
-      setConfig({
+      setConfig(c => ({
+        ...c,
         startTime: window.startTime,
         endTime: window.endTime,
-        signalCap: DEFAULT_CAP,
-        holdingPeriodMins: 0,
         selectedSectors: new Set<string>(),
-      });
+      }));
       setShowEmpty(false);
+      setActiveTab('throttle');
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to process file.');
+      setUploadError(err instanceof Error ? err.message : 'Failed to normalize rows.');
     }
-  }, [mapping, pendingRawRows]);
+  }, [mapping, pendingRawRows, pendingColumns]);
 
   // ── Sample data loader ────────────────────────────────────────────────────
   const handleLoadSample = useCallback(() => {
@@ -180,16 +240,20 @@ export default function App() {
 
     setSignals(normalized);
     setMetadata(meta);
+
     setSelectedEventId('100003');
     setConfig({
       startTime: '12:15',
       endTime: '13:15',
       signalCap: DEFAULT_CAP,
-      holdingPeriodMins: 0,
+      holdingPeriodMins: DEFAULT_HOLDING_PERIOD_MINS,
       selectedSectors: new Set<string>(),
     });
+    setPositionSize(DEFAULT_POSITION_SIZE);
     setShowEmpty(false);
+    setActiveTab('throttle');
     setUploadError(null);
+    setScenarioHistory([]);
   }, []);
 
   // ── Reset to upload screen ────────────────────────────────────────────────
@@ -203,13 +267,7 @@ export default function App() {
     setSelectedEventId(id);
     const evtSignals = signals.filter(s => s.eventId === id);
     const window = detectDefaultWindow(evtSignals);
-    setConfig(c => ({
-      ...c,
-      startTime: window.startTime,
-      endTime: window.endTime,
-      holdingPeriodMins: 0,
-      selectedSectors: new Set<string>(),
-    }));
+    setConfig(c => ({ ...c, startTime: window.startTime, endTime: window.endTime, holdingPeriodMins: DEFAULT_HOLDING_PERIOD_MINS, selectedSectors: new Set<string>() }));
   }, [signals]);
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -217,27 +275,32 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {/* Sidebar always visible when data is loaded */}
       {hasData && (
         <Sidebar
           metadata={metadata}
           config={effectiveConfig}
+          positionSize={positionSize}
           throttleResult={throttleResult}
           portfolioResult={portfolioResult}
           eventIds={metadata?.eventIds ?? []}
           selectedEventId={selectedEventId}
           onEventChange={handleEventChange}
           onConfigChange={handleConfigChange}
+          onPositionSizeChange={handlePositionSizeChange}
           onUploadClick={handleUploadClick}
         />
       )}
 
       <div className="main-content">
+        {/* Header */}
         {hasData && (
           <header className="main-header">
             <div className="main-header-title">
-              Signal Analyzer
-              {metadata?.isSample && (
-                <span className="badge-sample" style={{ marginLeft: 8 }}>Sample data</span>
+              {metadata?.isSample ? (
+                <>Signal Analyzer <span className="badge-sample" style={{ marginLeft: 8 }}>Sample data</span></>
+              ) : (
+                <>Signal Analyzer</>
               )}
             </div>
             <div className="main-header-meta">
@@ -256,6 +319,12 @@ export default function App() {
           </header>
         )}
 
+        {/* Tab nav */}
+        {hasData && (
+          <TabNav active={activeTab} onChange={setActiveTab} />
+        )}
+
+        {/* Content */}
         {!hasData ? (
           <EmptyState
             onFile={handleFile}
@@ -265,15 +334,30 @@ export default function App() {
             uploadStage={uploadStage}
           />
         ) : throttleResult ? (
-          <SignalThrottlePage
-            throttleResult={throttleResult}
-            portfolioResult={portfolioResult!}
-            counterfactual={counterfactualResult}
-            bestCap={bestCapResult}
-            windowStart={effectiveConfig.startTime}
-            windowEnd={effectiveConfig.endTime}
-            signalCap={effectiveConfig.signalCap}
-          />
+          activeTab === 'throttle' ? (
+            <SignalThrottlePage
+              throttleResult={throttleResult}
+              portfolioResult={portfolioResult!}
+              counterfactual={counterfactualResult}
+              bestCap={bestCapResult}
+              config={effectiveConfig}
+              windowStart={effectiveConfig.startTime}
+              windowEnd={effectiveConfig.endTime}
+              signalCap={effectiveConfig.signalCap}
+              positionSize={positionSize}
+            />
+          ) : (
+            <PortfolioAnalyzerPage
+              config={effectiveConfig}
+              positionSize={positionSize}
+              portfolioResult={portfolioResult!}
+              inWindowCount={throttleResult.summary.inWindowCount}
+              allSectors={allSectors}
+              scenarioHistory={scenarioHistory}
+              onConfigChange={handleConfigChange}
+              onPositionSizeChange={handlePositionSizeChange}
+            />
+          )
         ) : (
           <div className="page-scroll">
             <div style={{ color: 'var(--muted)', fontSize: 13, padding: '40px 0', textAlign: 'center' }}>
@@ -283,6 +367,7 @@ export default function App() {
         )}
       </div>
 
+      {/* Column mapping modal */}
       {showMapping && mapping && (
         <ColumnMappingModal
           mapping={mapping}

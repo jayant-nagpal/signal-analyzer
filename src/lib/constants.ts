@@ -15,19 +15,18 @@ export const RECOMMENDED_FIELDS: CanonicalField[] = [
   'bet_open_weight',
 ];
 
-// Sector codes used in bets_df files
 export const SECTOR_MAP: Record<number, string> = {
-  1: 'Materials',
-  2: 'Communication',
+  1: 'Energy',
+  2: 'Materials',
   3: 'Industrials',
-  4: 'Consumer Disc',
-  5: 'Staples',
+  4: 'Consumer Discretionary',
+  5: 'Consumer Staples',
   6: 'Healthcare',
   7: 'Financials',
-  8: 'Real Estate',
-  9: 'Energy',
+  8: 'Information Technology',
+  9: 'Communication Services',
   10: 'Utilities',
-  11: 'IT',
+  11: 'Real Estate',
 };
 
 export const DEFAULT_CAP = 5;

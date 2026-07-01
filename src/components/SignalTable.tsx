@@ -41,8 +41,6 @@ export function SignalTable({ title, subtitle, signals, collapsible, defaultColl
                 <th>OSID</th>
                 <th>Time</th>
                 <th>Sector</th>
-                <th>Days held</th>
-                <th>Type</th>
                 <th>Gross return</th>
                 <th>TC</th>
                 <th>Net return</th>
@@ -58,15 +56,6 @@ export function SignalTable({ title, subtitle, signals, collapsible, defaultColl
                   <td className="td-num">{sig.osid}</td>
                   <td className="td-num">{formatTime(sig.eventDate)}</td>
                   <td>{sig.sectorName}</td>
-                  <td className="td-num">{sig.daysHeld ?? '—'}</td>
-                  <td>
-                    {sig.exitType === -1
-                      ? <span style={{ color: 'var(--red)', fontSize: 11 }}>Stop-loss</span>
-                      : sig.betType
-                      ? <span style={{ fontSize: 11, color: 'var(--muted)' }}>{sig.betType}</span>
-                      : '—'
-                    }
-                  </td>
                   <td className={`td-num ${sig.grossReturn >= 0 ? 'td-pos' : 'td-neg'}`}>
                     {formatSignedPercent(sig.grossReturn)}
                   </td>

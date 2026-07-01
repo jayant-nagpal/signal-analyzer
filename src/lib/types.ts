@@ -6,22 +6,17 @@ export interface SignalRow {
   eventDate: Date;
   osid: string;
   betOpenDate?: Date | null;
-  betCloseDate?: Date | null;
   betFinalReturn: number;
   estTc: number;
   daysHeld?: number | null;
-  exitType?: 0 | -1 | null; // 0 = normal, -1 = stop-loss
   sectorCode?: number | null;
   sectorName: string;
   signal?: number | null;
-  betOpenWeight?: number | null; // e.g. 0.02 = long 2%, -0.02 = short 2%
-  betType?: string | null; // 'Active' | 'New' | 'Close'
+  betOpenWeight?: number | null;
   priceVsEma20?: number | null;
   priceVsSma50?: number | null;
   rlst?: number | null;
   hotnessRank?: number | null;
-  liquidityRank?: number | null;
-  wLiq?: number | null;
   sourceRow: Record<string, unknown>;
 }
 
@@ -68,11 +63,9 @@ export interface ThrottleResult {
 }
 
 // ─── Portfolio ────────────────────────────────────────────────────────────────
-// Position size comes from bet_open_weight in the file (not a slider)
 
 export interface SignalPortfolioContribution {
   signal: SignalDecision;
-  positionSize: number;      // abs(bet_open_weight) per signal
   grossContribution: number;
   costContribution: number;
   netContribution: number;
@@ -80,13 +73,12 @@ export interface SignalPortfolioContribution {
 
 export interface PortfolioResult {
   acceptedCount: number;
-  positionSize: number;       // avg abs(bet_open_weight) across accepted signals
+  positionSize: number;
   grossReturn: number;
   transactionCosts: number;
   netReturn: number;
-  capitalDeployed: number;    // sum of abs(bet_open_weight) across accepted
+  capitalDeployed: number;
   winRate: number;
-  stopLossCount: number;      // signals with exitType = -1
   contributions: SignalPortfolioContribution[];
   capitalWarning: 'none' | 'amber' | 'red';
   costConsumedPct: number | null;
@@ -113,21 +105,16 @@ export type CanonicalField =
   | 'event_date'
   | 'osid'
   | 'bet_open_date'
-  | 'bet_close_date'
   | 'bet_final_return'
   | 'est_tc'
   | 'days_held'
-  | 'exit_type'
   | 'sector_group'
   | 'signal'
   | 'bet_open_weight'
-  | 'bet_type'
   | 'price_vs_ema20'
   | 'price_vs_sma50'
   | 'rlst'
-  | 'hotness_rank'
-  | 'liquidity_rank'
-  | 'w_liq';
+  | 'hotness_rank';
 
 export type MappingConfidence = 'high' | 'medium' | 'missing';
 
@@ -179,4 +166,4 @@ export interface ScenarioHistoryItem {
 
 // ─── App State ────────────────────────────────────────────────────────────────
 
-export type ActiveTab = 'throttle';
+export type ActiveTab = 'throttle' | 'portfolio';
