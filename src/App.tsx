@@ -1,382 +1,115 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
-import type {
-  SignalRow, RawRow, ColumnMapping, DatasetMetadata,
-  ThrottleConfig, ActiveTab, ScenarioHistoryItem,
-} from './lib/types';
-import { buildInitialMapping } from './lib/mapping';
-import { normalizeRows } from './lib/normalize';
-import { runThrottle } from './lib/throttle';
-import { computePortfolio, computeCounterfactual, computeBestCap } from './lib/portfolio';
-import { parseFile } from './lib/parse/parseFile';
-import { DEFAULT_CAP, DEFAULT_POSITION_SIZE, DEFAULT_START_TIME, DEFAULT_END_TIME } from './lib/constants';
-import { SAMPLE_RAW_ROWS } from './data/sampleSignals';
+import { useState, useCallback, useRef } from 'react';
+import { parseFile } from './lib/parse';
+import type { ParseResult } from './lib/parse';
+import type { Position } from './lib/types';
+import { UploadScreen } from './components/UploadScreen';
+import { OverviewPage } from './pages/OverviewPage';
+import { DrilldownPage } from './pages/DrilldownPage';
+import './App.css';
 
-import { Sidebar } from './components/Sidebar';
-import { TabNav } from './components/TabNav';
-import { EmptyState } from './components/EmptyState';
-import { ColumnMappingModal } from './components/ColumnMappingModal';
-import { SignalThrottlePage } from './pages/SignalThrottlePage';
-import { PortfolioAnalyzerPage } from './pages/PortfolioAnalyzerPage';
+type View = 'overview' | 'drilldown';
 
-// ── Sample column mapping ──────────────────────────────────────────────────────
-const SAMPLE_COLUMNS = [
-  'event_id', 'event_date', 'osid', 'bet_final_return', 'est_tc',
-  'days_held', 'sector_group', 'signal', 'bet_open_weight',
-];
-
-// ── Default time window detection ─────────────────────────────────────────────
-function detectDefaultWindow(signals: SignalRow[]): { startTime: string; endTime: string } {
-  if (signals.length === 0) return { startTime: DEFAULT_START_TIME, endTime: DEFAULT_END_TIME };
-  const has1215 = signals.some(s => s.eventDate.getHours() === 12 && s.eventDate.getMinutes() === 15);
-  if (has1215) return { startTime: '12:15', endTime: '13:15' };
-  const earliest = signals[0].eventDate;
-  const startH = earliest.getHours().toString().padStart(2, '0');
-  const startM = earliest.getMinutes().toString().padStart(2, '0');
-  const endDate = new Date(earliest.getTime() + 60 * 60 * 1000);
-  const endH = endDate.getHours().toString().padStart(2, '0');
-  const endM = endDate.getMinutes().toString().padStart(2, '0');
-  return { startTime: `${startH}:${startM}`, endTime: `${endH}:${endM}` };
-}
-
-// ── Scenario history helper ───────────────────────────────────────────────────
-function addScenario(
-  history: ScenarioHistoryItem[],
-  item: ScenarioHistoryItem,
-): ScenarioHistoryItem[] {
-  const filtered = history.filter(h =>
-    !(h.cap === item.cap && h.positionSize === item.positionSize &&
-      h.startTime === item.startTime && h.endTime === item.endTime)
-  );
-  return [item, ...filtered].slice(0, 3);
-}
-
-// ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  // Dataset state
-  const [signals, setSignals] = useState<SignalRow[]>([]);
-  const [metadata, setMetadata] = useState<DatasetMetadata | null>(null);
-  const [mapping, setMapping] = useState<ColumnMapping | null>(null);
-  const [pendingRawRows, setPendingRawRows] = useState<RawRow[]>([]);
-  const [pendingColumns, setPendingColumns] = useState<string[]>([]);
+  const [result, setResult] = useState<ParseResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<View>('overview');
+  const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // UI state
-  const [activeTab, setActiveTab] = useState<ActiveTab>('throttle');
-  const [showMapping, setShowMapping] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadStage, setUploadStage] = useState('');
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [showEmpty, setShowEmpty] = useState(true);
-
-  // Config
-  const [config, setConfig] = useState<ThrottleConfig>({
-    startTime: DEFAULT_START_TIME,
-    endTime: DEFAULT_END_TIME,
-    signalCap: DEFAULT_CAP,
-    selectedSectors: new Set<string>(),
-  });
-  const [positionSize, setPositionSize] = useState(DEFAULT_POSITION_SIZE);
-  const [selectedEventId, setSelectedEventId] = useState<string>('');
-  const [scenarioHistory, setScenarioHistory] = useState<ScenarioHistoryItem[]>([]);
-  const scenarioTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ── Derived: filtered signals by eventId ───────────────────────────────────
-  const filteredSignals = useMemo(() => {
-    if (!selectedEventId || signals.length === 0) return signals;
-    return signals.filter(s => s.eventId === selectedEventId);
-  }, [signals, selectedEventId]);
-
-  // ── Derived: sectors present ───────────────────────────────────────────────
-  const allSectors = useMemo(() => {
-    const s = new Set(filteredSignals.map(sig => sig.sectorName));
-    return [...s].filter(x => x !== 'Unknown').sort();
-  }, [filteredSignals]);
-
-  // ── Ensure config sectors are initialized ─────────────────────────────────
-  const effectiveConfig = useMemo<ThrottleConfig>(() => {
-    if (config.selectedSectors.size === 0 && allSectors.length > 0) {
-      return { ...config, selectedSectors: new Set(allSectors) };
-    }
-    return config;
-  }, [config, allSectors]);
-
-  // ── Derived: throttle result ───────────────────────────────────────────────
-  const throttleResult = useMemo(() => {
-    if (filteredSignals.length === 0) return null;
-    return runThrottle(filteredSignals, effectiveConfig);
-  }, [filteredSignals, effectiveConfig]);
-
-  // ── Derived: portfolio result ──────────────────────────────────────────────
-  const portfolioResult = useMemo(() => {
-    if (!throttleResult) return null;
-    return computePortfolio(throttleResult.acceptedSignals, positionSize);
-  }, [throttleResult, positionSize]);
-
-  // ── Derived: counterfactual ────────────────────────────────────────────────
-  const counterfactualResult = useMemo(() => {
-    if (!throttleResult) return null;
-    return computeCounterfactual(
-      throttleResult.skippedSignals,
-      effectiveConfig.signalCap,
-      positionSize,
-    );
-  }, [throttleResult, effectiveConfig.signalCap, positionSize]);
-
-  // Best cap scan
-  const bestCapResult = useMemo(() => {
-    if (!throttleResult) return null;
-    const inWindow = [...throttleResult.acceptedSignals, ...throttleResult.skippedSignals];
-    if (inWindow.length === 0) return null;
-    return computeBestCap(inWindow, positionSize);
-  }, [throttleResult, positionSize]);
-
-  // ── Scenario recording ─────────────────────────────────────────────────────
-  const scheduleScenarioRecord = useCallback((
-    cfg: ThrottleConfig,
-    ps: number,
-    accepted: number,
-    netReturn: number,
-    capitalDeployed: number,
-  ) => {
-    if (scenarioTimerRef.current) clearTimeout(scenarioTimerRef.current);
-    scenarioTimerRef.current = setTimeout(() => {
-      setScenarioHistory(h => addScenario(h, {
-        cap: cfg.signalCap,
-        positionSize: ps,
-        startTime: cfg.startTime,
-        endTime: cfg.endTime,
-        acceptedCount: accepted,
-        netReturn,
-        capitalDeployed,
-        timestamp: Date.now(),
-      }));
-    }, 500);
-  }, []);
-
-  // ── Config change handlers ────────────────────────────────────────────────
-  const handleConfigChange = useCallback((newCfg: ThrottleConfig) => {
-    setConfig(newCfg);
-    if (portfolioResult) {
-      scheduleScenarioRecord(
-        newCfg, positionSize,
-        portfolioResult.acceptedCount, portfolioResult.netReturn, portfolioResult.capitalDeployed,
-      );
-    }
-  }, [portfolioResult, positionSize, scheduleScenarioRecord]);
-
-  const handlePositionSizeChange = useCallback((v: number) => {
-    setPositionSize(v);
-    if (portfolioResult) {
-      scheduleScenarioRecord(
-        effectiveConfig, v,
-        portfolioResult.acceptedCount, portfolioResult.netReturn, portfolioResult.capitalDeployed,
-      );
-    }
-  }, [portfolioResult, effectiveConfig, scheduleScenarioRecord]);
-
-  // ── File upload flow ──────────────────────────────────────────────────────
-  const handleFile = useCallback(async (file: File) => {
-    setUploadError(null);
-    setUploading(true);
-    setUploadStage('Reading file...');
-
-    try {
-      setUploadStage('Detecting columns...');
-      const parsed = await parseFile(file);
-      setPendingRawRows(parsed.rows);
-      setPendingColumns(parsed.columns);
-      const initMapping = buildInitialMapping(parsed.columns);
-      setMapping(initMapping);
-      setUploading(false);
-      setUploadStage('Confirm mapping...');
-      setShowMapping(true);
-    } catch (err) {
-      setUploading(false);
-      setUploadError(err instanceof Error ? err.message : 'Could not parse this file.');
-    }
-  }, []);
-
-  const handleMappingConfirm = useCallback(() => {
-    if (!mapping || pendingRawRows.length === 0) return;
-    setUploadStage('Running throttle...');
-    setShowMapping(false);
-
-    try {
-      const { signals: normalized, metadata: meta } = normalizeRows(
-        pendingRawRows, mapping, pendingColumns[0] ? 'Uploaded file' : 'Unknown',
-      );
-
-      if (normalized.length === 0) {
-        setUploadError('No usable signal rows were found.');
-        return;
+  const handleFile = useCallback((file: File) => {
+    setLoading(true);
+    setError(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const res = parseFile(text);
+        if (res.positions.length === 0) throw new Error('No positions found in file.');
+        setResult(res);
+        setView('overview');
+        setSelectedPosition(null);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to parse file.');
+      } finally {
+        setLoading(false);
       }
+    };
+    reader.onerror = () => {
+      setError('Could not read file.');
+      setLoading(false);
+    };
+    reader.readAsText(file);
+  }, []);
 
-      const eventIds = meta.eventIds;
-      const firstEventId = eventIds[0] ?? 'default_event';
-      const window = detectDefaultWindow(normalized);
+  const handleDrilldown = useCallback((pos: Position) => {
+    setSelectedPosition(pos);
+    setView('drilldown');
+  }, []);
 
-      setSignals(normalized);
-      setMetadata({ ...meta, fileName: pendingRawRows.length + ' rows uploaded' });
-      setSelectedEventId(firstEventId);
-      setConfig(c => ({
-        ...c,
-        startTime: window.startTime,
-        endTime: window.endTime,
-        selectedSectors: new Set<string>(),
-      }));
-      setShowEmpty(false);
-      setActiveTab('throttle');
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to normalize rows.');
-    }
-  }, [mapping, pendingRawRows, pendingColumns]);
+  const handleBack = useCallback(() => {
+    setView('overview');
+    setSelectedPosition(null);
+  }, []);
 
-  // ── Sample data loader ────────────────────────────────────────────────────
-  const handleLoadSample = useCallback(() => {
-    const sampleMapping = buildInitialMapping(SAMPLE_COLUMNS);
-    const { signals: normalized, metadata: meta } = normalizeRows(
-      SAMPLE_RAW_ROWS, sampleMapping, 'Sample signal event', true,
+  const handleReset = useCallback(() => {
+    setResult(null);
+    setView('overview');
+    setSelectedPosition(null);
+    setError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
+
+  if (!result && !loading) {
+    return <UploadScreen onFile={handleFile} error={error} fileInputRef={fileInputRef} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner" />
+        <p className="loading-text">Parsing position data…</p>
+      </div>
     );
-
-    setSignals(normalized);
-    setMetadata(meta);
-
-    setSelectedEventId('100003');
-    setConfig({
-      startTime: '12:15',
-      endTime: '13:15',
-      signalCap: DEFAULT_CAP,
-      selectedSectors: new Set<string>(),
-    });
-    setPositionSize(DEFAULT_POSITION_SIZE);
-    setShowEmpty(false);
-    setActiveTab('throttle');
-    setUploadError(null);
-    setScenarioHistory([]);
-  }, []);
-
-  // ── Reset to upload screen ────────────────────────────────────────────────
-  const handleUploadClick = useCallback(() => {
-    setShowEmpty(true);
-    setUploadError(null);
-  }, []);
-
-  // ── Event selector ────────────────────────────────────────────────────────
-  const handleEventChange = useCallback((id: string) => {
-    setSelectedEventId(id);
-    const evtSignals = signals.filter(s => s.eventId === id);
-    const window = detectDefaultWindow(evtSignals);
-    setConfig(c => ({ ...c, startTime: window.startTime, endTime: window.endTime, selectedSectors: new Set<string>() }));
-  }, [signals]);
-
-  // ── Render ────────────────────────────────────────────────────────────────
-  const hasData = signals.length > 0 && !showEmpty;
+  }
 
   return (
     <div className="app-shell">
-      {/* Sidebar always visible when data is loaded */}
-      {hasData && (
-        <Sidebar
-          metadata={metadata}
-          config={effectiveConfig}
-          positionSize={positionSize}
-          throttleResult={throttleResult}
-          portfolioResult={portfolioResult}
-          eventIds={metadata?.eventIds ?? []}
-          selectedEventId={selectedEventId}
-          onEventChange={handleEventChange}
-          onConfigChange={handleConfigChange}
-          onPositionSizeChange={handlePositionSizeChange}
-          onUploadClick={handleUploadClick}
-        />
-      )}
+      {/* Top bar */}
+      <header className="topbar">
+        <div className="topbar-left">
+          <svg className="logo" viewBox="0 0 28 28" fill="none" aria-label="Position Lens">
+            <circle cx="14" cy="14" r="10" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="14" cy="14" r="5" stroke="#22C98A" strokeWidth="1.5" />
+            <line x1="14" y1="2" x2="14" y2="6" stroke="currentColor" strokeWidth="1.5" />
+            <line x1="14" y1="22" x2="14" y2="26" stroke="currentColor" strokeWidth="1.5" />
+            <line x1="2" y1="14" x2="6" y2="14" stroke="currentColor" strokeWidth="1.5" />
+            <line x1="22" y1="14" x2="26" y2="14" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+          <span className="app-name">Position Lens</span>
+          {result && (
+            <span className="topbar-meta">
+              Event {result.eventId} · {result.positions.length} positions · {result.rowCount.toLocaleString()} rows · parsed in {result.parseTimeMs}ms
+            </span>
+          )}
+        </div>
+        <div className="topbar-right">
+          {view === 'drilldown' && (
+            <button className="btn-ghost" onClick={handleBack}>← Overview</button>
+          )}
+          <button className="btn-ghost" onClick={handleReset}>Upload new file</button>
+        </div>
+      </header>
 
-      <div className="main-content">
-        {/* Header */}
-        {hasData && (
-          <header className="main-header">
-            <div className="main-header-title">
-              {metadata?.isSample ? (
-                <>Signal Analyzer <span className="badge-sample" style={{ marginLeft: 8 }}>Sample data</span></>
-              ) : (
-                <>Signal Analyzer</>
-              )}
-            </div>
-            <div className="main-header-meta">
-              {metadata && (
-                <>
-                  <span>{metadata.rowsUsable.toLocaleString()} signals</span>
-                  {metadata.eventIds.length > 0 && <span>Event: {selectedEventId}</span>}
-                  {metadata.dateRange && (
-                    <span>
-                      {metadata.dateRange.min.toLocaleDateString()} – {metadata.dateRange.max.toLocaleDateString()}
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
-          </header>
+      {/* Content */}
+      <main className="main-content">
+        {view === 'overview' && result && (
+          <OverviewPage result={result} onDrilldown={handleDrilldown} />
         )}
-
-        {/* Tab nav */}
-        {hasData && (
-          <TabNav active={activeTab} onChange={setActiveTab} />
+        {view === 'drilldown' && selectedPosition && result && (
+          <DrilldownPage position={selectedPosition} allPositions={result.positions} />
         )}
-
-        {/* Content */}
-        {!hasData ? (
-          <EmptyState
-            onFile={handleFile}
-            onSample={handleLoadSample}
-            error={uploadError}
-            uploading={uploading}
-            uploadStage={uploadStage}
-          />
-        ) : throttleResult ? (
-          activeTab === 'throttle' ? (
-            <SignalThrottlePage
-              throttleResult={throttleResult}
-              portfolioResult={portfolioResult!}
-              counterfactual={counterfactualResult}
-              bestCap={bestCapResult}
-              windowStart={effectiveConfig.startTime}
-              windowEnd={effectiveConfig.endTime}
-              signalCap={effectiveConfig.signalCap}
-              positionSize={positionSize}
-            />
-          ) : (
-            <PortfolioAnalyzerPage
-              config={effectiveConfig}
-              positionSize={positionSize}
-              portfolioResult={portfolioResult!}
-              inWindowCount={throttleResult.summary.inWindowCount}
-              allSectors={allSectors}
-              scenarioHistory={scenarioHistory}
-              onConfigChange={handleConfigChange}
-              onPositionSizeChange={handlePositionSizeChange}
-            />
-          )
-        ) : (
-          <div className="page-scroll">
-            <div style={{ color: 'var(--muted)', fontSize: 13, padding: '40px 0', textAlign: 'center' }}>
-              No signals match the current filters.
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Column mapping modal */}
-      {showMapping && mapping && (
-        <ColumnMappingModal
-          mapping={mapping}
-          sourceColumns={pendingColumns}
-          rawRows={pendingRawRows}
-          returnUnit={metadata?.returnUnitInferred ?? 'decimal'}
-          costUnit={metadata?.costUnitInferred ?? 'decimal'}
-          onMappingChange={setMapping}
-          onConfirm={handleMappingConfirm}
-          onCancel={() => { setShowMapping(false); setUploading(false); }}
-        />
-      )}
+      </main>
     </div>
   );
 }
